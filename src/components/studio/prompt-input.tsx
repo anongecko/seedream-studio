@@ -15,16 +15,18 @@ interface PromptInputProps {
 const WORD_WARNING_THRESHOLD = 500;
 const WORD_LIMIT_THRESHOLD = 600;
 
-const MODE_PLACEHOLDERS = {
+const MODE_PLACEHOLDERS: Record<string, string> = {
   text: 'Describe the image you want to create in vivid detail...',
   image: 'Describe how you want to transform the reference image...',
   'multi-image': 'Describe how you want to blend these images together...',
+  'multi-batch': 'Describe variations to generate from your reference images (e.g., different times of day, seasons, styles)...',
 };
 
-const MODE_EXAMPLES = {
+const MODE_EXAMPLES: Record<string, string> = {
   text: 'A serene mountain landscape at golden hour, with misty valleys and snow-capped peaks reflecting warm sunlight',
   image: 'Transform into a vibrant watercolor painting with soft edges and flowing colors',
   'multi-image': 'Seamlessly blend the subjects into a cohesive scene with harmonious lighting and composition',
+  'multi-batch': 'Generate 3 images showing the subjects at morning, noon, and night, maintaining consistent style and composition',
 };
 
 export function PromptInput({ value, onChange, mode, className = '' }: PromptInputProps) {

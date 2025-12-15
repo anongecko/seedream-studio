@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Type, Image as ImageIcon, Images } from 'lucide-react';
+import { Type, Image as ImageIcon, Images, Layers } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { GenerationMode } from '@/types/api';
 
@@ -26,8 +26,14 @@ const modes = [
   {
     id: 'multi-image' as const,
     label: 'Multi-Image',
-    description: 'Blend 2-10 images',
+    description: 'Blend 2-14 images',
     icon: Images,
+  },
+  {
+    id: 'multi-batch' as const,
+    label: 'Batch Generation',
+    description: '2-14 refs → multiple outputs',
+    icon: Layers,
   },
 ] as const;
 
@@ -36,7 +42,7 @@ export function ModeTabs({ mode, onModeChange }: ModeTabsProps) {
 
   return (
     <div className="w-full">
-      <div className="grid grid-cols-3 gap-3 p-1 bg-muted/50 rounded-xl border border-border/50">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 p-1 bg-muted/50 rounded-xl border border-border/50">
         {modes.map((modeItem, index) => {
           const isActive = mode === modeItem.id;
           const isHovered = hoveredMode === modeItem.id;

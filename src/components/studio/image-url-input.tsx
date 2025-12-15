@@ -42,14 +42,11 @@ export function ImageUrlInput({
       // Extract pathname without query parameters
       const pathname = urlObj.pathname.toLowerCase();
 
-      // Check if pathname contains supported image formats
-      const isDirectImage = pathname.endsWith('.jpg') ||
-                           pathname.endsWith('.jpeg') ||
-                           pathname.endsWith('.png') ||
-                           // Also accept URLs with query params if they have image extensions
-                           lowerUrl.includes('.jpg') ||
-                           lowerUrl.includes('.jpeg') ||
-                           lowerUrl.includes('.png');
+      // Seedream 4.5: Expanded format support - jpeg, jpg, png, webp, bmp, tiff, gif
+      const supportedFormats = ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff', '.tif', '.gif'];
+      const isDirectImage = supportedFormats.some(ext =>
+        pathname.endsWith(ext) || lowerUrl.includes(ext)
+      );
 
       if (isDirectImage) {
         setValidationState('valid');
@@ -162,7 +159,7 @@ export function ImageUrlInput({
                 className="text-xs text-red-500 mt-1.5 ml-1 space-y-0.5"
               >
                 <p className="font-medium">⚠️ Direct image link required</p>
-                <p className="text-red-400">URL must contain .jpg, .jpeg, or .png (not a webpage)</p>
+                <p className="text-red-400">URL must contain .jpg, .jpeg, .png, .webp, .bmp, .tiff, or .gif (not a webpage)</p>
                 <p className="text-red-400/80 text-[10px]">Tip: Use direct links like image.png or image.png?raw=1</p>
               </motion.div>
             )}
@@ -213,7 +210,7 @@ export function MultiImageInput({
   urls,
   onChange,
   minImages = 2,
-  maxImages = 10,
+  maxImages = 14, // Seedream 4.5: Max 14 reference images (was 10)
 }: MultiImageInputProps) {
   const handleUrlChange = (index: number, value: string) => {
     const newUrls = [...urls];
@@ -279,9 +276,12 @@ export function MultiImageInput({
               ⚠️ Direct Image Links Required (Not Webpages!)
             </p>
             <p className="text-xs text-amber-800 dark:text-amber-200/80 leading-relaxed">
-              URLs must contain <code className="px-1.5 py-0.5 rounded bg-amber-500/20 font-mono">.jpg</code>,{' '}
-              <code className="px-1.5 py-0.5 rounded bg-amber-500/20 font-mono">.jpeg</code>, or{' '}
-              <code className="px-1.5 py-0.5 rounded bg-amber-500/20 font-mono">.png</code>
+              URLs must contain image extensions: <code className="px-1.5 py-0.5 rounded bg-amber-500/20 font-mono">.jpg</code>,{' '}
+              <code className="px-1.5 py-0.5 rounded bg-amber-500/20 font-mono">.png</code>,{' '}
+              <code className="px-1.5 py-0.5 rounded bg-amber-500/20 font-mono">.webp</code>,{' '}
+              <code className="px-1.5 py-0.5 rounded bg-amber-500/20 font-mono">.bmp</code>,{' '}
+              <code className="px-1.5 py-0.5 rounded bg-amber-500/20 font-mono">.tiff</code>, or{' '}
+              <code className="px-1.5 py-0.5 rounded bg-amber-500/20 font-mono">.gif</code>
               <span className="text-amber-700 dark:text-amber-300"> (query params like ?raw=1 are OK)</span>
             </p>
             <p className="text-[11px] text-amber-700 dark:text-amber-300/70 leading-relaxed">

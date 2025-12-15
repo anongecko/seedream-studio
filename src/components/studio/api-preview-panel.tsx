@@ -27,10 +27,10 @@ export function ApiPreviewPanel({
   const [isOpen, setIsOpen] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
 
-  // Build the API request object
+  // Build the API request object for Seedream 4.5
   const apiRequest = React.useMemo(() => {
     const request: Partial<SeedreamRequest> = {
-      model: 'seedream-4-0-250828',
+      model: 'seedream-4-5-251128', // Seedream 4.5
       prompt: prompt || '',
       sequential_image_generation: batchMode ? 'auto' : 'disabled',
       response_format: 'b64_json',
@@ -48,7 +48,7 @@ export function ApiPreviewPanel({
     // Add image field based on mode
     if (mode === 'image' && referenceImageUrls.length > 0) {
       request.image = referenceImageUrls[0];
-    } else if (mode === 'multi-image' && referenceImageUrls.length > 1) {
+    } else if ((mode === 'multi-image' || mode === 'multi-batch') && referenceImageUrls.length > 1) {
       request.image = referenceImageUrls;
     }
 
@@ -56,9 +56,12 @@ export function ApiPreviewPanel({
     if (size !== '2048x2048') {
       request.size = size.replace('×', 'x'); // Convert display format to API format
     }
-    if (quality !== 'standard') {
-      request.quality = quality;
-    }
+
+    // Seedream 4.5: Use optimize_prompt_options instead of quality parameter
+    // Always include it to show users the new API structure
+    request.optimize_prompt_options = {
+      mode: quality, // Maps to 'standard' | 'fast'
+    };
 
     return request;
   }, [mode, prompt, size, quality, batchMode, maxImages, referenceImageUrls]);

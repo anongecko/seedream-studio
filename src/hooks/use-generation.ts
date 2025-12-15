@@ -2,24 +2,7 @@
 
 import { useState } from 'react';
 import { getSeedreamClient } from '@/lib/seedream-client';
-import type { GenerationMode, Quality, SeedreamResponse } from '@/types/api';
-
-interface GenerationResult {
-  id: string;
-  images: Array<{
-    base64: string;
-    size: string;
-  }>;
-  prompt: string;
-  mode: GenerationMode;
-  parameters: {
-    size: string;
-    quality: Quality;
-    batchMode: boolean;
-    maxImages?: number;
-  };
-  timestamp: Date;
-}
+import type { GenerationMode, Quality, SeedreamResponse, GenerationResult } from '@/types/api';
 
 interface GenerationRequest {
   apiKey: string;
@@ -77,12 +60,14 @@ export function useGeneration() {
         images,
         prompt: request.prompt,
         mode: request.mode,
+        referenceImageUrls: request.images, // Save reference images used
         parameters: {
           size: request.size || '2048x2048',
           quality: request.quality || 'standard',
           batchMode: request.batchMode || false,
           maxImages: request.maxImages,
         },
+        generationTimeMs: 0, // TODO: Track actual generation time
         timestamp: new Date(),
       };
 

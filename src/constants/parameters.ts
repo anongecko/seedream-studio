@@ -5,20 +5,21 @@ import type { Quality, SizePreset, ResponseFormat } from '@/types/api';
  */
 export const PARAMETER_CONSTRAINTS = {
   imageUrl: {
-    maxCount: 10, // For multi-image mode
-    formats: ['jpeg', 'png'],
+    maxCount: 14, // Seedream 4.5: Max 14 reference images
+    formats: ['jpeg', 'jpg', 'png', 'webp', 'bmp', 'tiff', 'gif'], // Seedream 4.5: Expanded format support
     maxSize: 10 * 1024 * 1024, // 10 MB
-    aspectRatio: { min: 1 / 3, max: 3 },
+    aspectRatio: { min: 1 / 16, max: 16 }, // Seedream 4.5: Expanded from [1/3, 3] to [1/16, 16]
     minDimension: 14,
     maxTotalPixels: 6000 * 6000,
   },
 
   size: {
-    presets: ['1K', '2K', '4K'] as const,
+    presets: ['2K', '4K'] as const, // Seedream 4.5: Removed '1K' preset
     customRange: {
-      min: { width: 1280, height: 720 },
+      min: { width: 2560, height: 1440 }, // Seedream 4.5: Higher minimum (was 1280x720)
       max: { width: 4096, height: 4096 },
     },
+    minTotalPixels: 2560 * 1440, // 3,686,400 pixels minimum
     aspectRatioRange: { min: 1 / 16, max: 16 },
     common: [
       { label: '1:1 Square', ratio: '1:1', value: '2048x2048' },
@@ -48,7 +49,7 @@ export const PARAMETER_CONSTRAINTS = {
 } as const;
 
 /**
- * Default parameter values
+ * Default parameter values for Seedream 4.5
  */
 export const DEFAULTS = {
   size: '2048x2048',
@@ -57,7 +58,7 @@ export const DEFAULTS = {
   stream: false,
   watermark: false,
   sequentialImageGeneration: 'disabled' as const,
-  model: 'seedream-4-0-250828' as const,
+  model: 'seedream-4-5-251128' as const, // Seedream 4.5
   batchMode: false,
   maxImages: 15,
 } as const;
@@ -69,4 +70,5 @@ export const PLACEHOLDER_PROMPTS = {
   text: 'Describe the image you want to generate...',
   image: 'Describe how to transform the reference image...',
   'multi-image': 'Describe how to blend the reference images...',
+  'multi-batch': 'Describe the variations to generate from reference images (e.g., "Generate 3 images with different lighting: morning, noon, night")...',
 } as const;

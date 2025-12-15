@@ -115,5 +115,10 @@ export type Database = {
 }
 
 // Custom type aliases for our app
-export type GenerationMode = 'text' | 'image' | 'multi-image';
+// Modes:
+// - 'text': Text to Image (no reference images)
+// - 'image': Image to Image (1 reference image)
+// - 'multi-image': Multi-Image Blending (2-14 reference images, single output)
+// - 'multi-batch': Multi-Image to Batch (2-14 reference images, batch output)
+export type GenerationMode = 'text' | 'image' | 'multi-image' | 'multi-batch';
 export type Quality = 'standard' | 'fast';

@@ -2,24 +2,29 @@ import type { GenerationMode, Quality } from '@/lib/supabase/types';
 
 export type { GenerationMode, Quality };
 
-export type SizePreset = '1K' | '2K' | '4K';
+export type SizePreset = '2K' | '4K'; // Seedream 4.5 removed '1K' preset
 export type ResponseFormat = 'url' | 'b64_json';
+export type OptimizePromptMode = 'standard' | 'fast';
 
 /**
- * Seedream API request payload
- * Supports 3 generation modes with single or batch output:
- * - Text to Image: no image field
- * - Image to Image: image as single string
- * - Multi-Image Blending: image as array of 2-10 strings
+ * Seedream 4.5 API request payload
+ * Supports 4 generation modes:
+ * - Text to Image: no image field, single or batch output
+ * - Image to Image: image as single string, single or batch output
+ * - Multi-Image Blending: image as array of 2-14 strings, single output (disabled batch)
+ * - Multi-Image to Batch: image as array of 2-14 strings, batch output (auto batch)
  *
  * Batch generation: Set sequential_image_generation to "auto" and provide sequential_image_generation_options
+ * Constraint for batch: input images + output images <= 15
  */
 export interface SeedreamRequest {
-  model: 'seedream-4-0-250828';
+  model: 'seedream-4-5-251128';
   prompt: string;
-  image?: string | string[]; // undefined for text-to-image, string for image-to-image, array for multi-image
-  size?: SizePreset | string; // Default: "2048x2048"
-  quality?: Quality; // Default: "standard"
+  image?: string | string[]; // undefined for text-to-image, string for image-to-image, array for multi-image (max 14)
+  size?: SizePreset | string; // Default: "2048x2048", min total pixels: 2560x1440
+  optimize_prompt_options?: {
+    mode: OptimizePromptMode; // Default: "standard" (replaces old 'quality' parameter)
+  };
   sequential_image_generation: 'disabled' | 'auto'; // 'auto' for batch generation
   sequential_image_generation_options?: {
     max_images: number; // Range: 1-15, adjusted based on input images
@@ -67,10 +72,10 @@ export interface GenerationResult {
   }>;
   prompt: string;
   mode: GenerationMode;
-  referenceImageUrls?: string[];
+  referenceImageUrls?: string[]; // Base64 strings or URLs used as references
   parameters: {
     size: string;
-    quality: Quality;
+    quality: Quality; // Maps to optimize_prompt_options.mode
     batchMode: boolean;
     maxImages?: number; // Only when batchMode is true
   };

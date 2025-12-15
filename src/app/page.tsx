@@ -11,8 +11,8 @@ import { SizeSelector } from '@/components/studio/size-selector';
 import { QualityToggle } from '@/components/studio/quality-toggle';
 import { BatchModeToggle } from '@/components/studio/batch-mode-toggle';
 import { ApiPreviewPanel } from '@/components/studio/api-preview-panel';
-import { ImageUrlInput, MultiImageInput } from '@/components/studio/image-url-input';
 import { GenerationOutput } from '@/components/studio/generation-output';
+import { ImageUploadZone, filesToBase64, type ImageFile } from '@/components/studio/image-upload-zone';
 import { useApiKey } from '@/hooks/use-api-key';
 import { useGeneration } from '@/hooks/use-generation';
 import type { GenerationMode, Quality } from '@/types/api';
@@ -62,13 +62,25 @@ export default function Home() {
   const [quality, setQuality] = React.useState<Quality>('standard');
   const [batchMode, setBatchMode] = React.useState(false);
   const [maxImages, setMaxImages] = React.useState(15);
-  const [referenceImageUrl, setReferenceImageUrl] = React.useState(''); // For Image to Image mode
-  const [referenceImageUrls, setReferenceImageUrls] = React.useState(['', '']); // For Multi-Image mode
+  const [referenceImages, setReferenceImages] = React.useState<ImageFile[]>([]); // Uploaded image files
 
   // Calculate reference image count for batch constraints
-  const referenceImageCount = mode === 'image' ? (referenceImageUrl ? 1 : 0) :
-                               mode === 'multi-image' ? referenceImageUrls.filter(u => u).length :
-                               0;
+  const referenceImageCount = referenceImages.filter(img => img.validation.valid).length;
+
+  // Clear uploaded images and reset batch settings when switching modes
+  React.useEffect(() => {
+    // Cleanup object URLs
+    referenceImages.forEach(img => URL.revokeObjectURL(img.preview));
+    setReferenceImages([]);
+
+    // For multi-batch mode, batch is always enabled
+    if (mode === 'multi-batch') {
+      setBatchMode(true);
+      setMaxImages(3); // Default to 3 for multi-batch
+    } else {
+      setBatchMode(false);
+    }
+  }, [mode]);
 
   // Handle image generation
   const handleGenerate = async () => {
@@ -76,13 +88,14 @@ export default function Home() {
 
     // Prepare reference images based on mode
     let images: string[] | undefined;
-    if (mode === 'image' && referenceImageUrl) {
-      images = [referenceImageUrl];
-    } else if (mode === 'multi-image') {
-      const urls = referenceImageUrls.filter(url => url.trim().length > 0);
-      if (urls.length > 0) {
-        images = urls;
-      }
+
+    // Filter valid images only
+    const validImages = referenceImages.filter(img => img.validation.valid);
+
+    if (validImages.length > 0) {
+      // Convert Files to base64 strings
+      const base64Images = await filesToBase64(validImages.map(img => img.file));
+      images = base64Images;
     }
 
     // Convert size from display format (×) to API format (x)
@@ -113,9 +126,7 @@ export default function Home() {
         batchMode={batchMode}
         maxImages={maxImages}
         referenceImageUrls={
-          mode === 'image' ? (referenceImageUrl ? [referenceImageUrl] : []) :
-          mode === 'multi-image' ? referenceImageUrls.filter(url => url) :
-          []
+          referenceImages.filter(img => img.validation.valid).map(() => '[base64 image data]')
         }
       />
 
@@ -135,7 +146,7 @@ export default function Home() {
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
               Transform your ideas into stunning visuals with{' '}
               <span className="bg-gradient-to-r from-ocean-500 to-dream-500 bg-clip-text text-transparent font-semibold">
-                Seedream 4.0
+                Seedream 4.5
               </span>
             </p>
           </motion.div>
@@ -177,11 +188,7 @@ export default function Home() {
                     quality={result.parameters.quality}
                     batchMode={result.parameters.batchMode}
                     maxImages={result.parameters.maxImages}
-                    referenceImageUrls={
-                      mode === 'image' ? (referenceImageUrl ? [referenceImageUrl] : []) :
-                      mode === 'multi-image' ? referenceImageUrls.filter(url => url) :
-                      []
-                    }
+                    referenceImageUrls={result.referenceImageUrls}
                   />
 
                   {/* Generate another button */}
@@ -196,47 +203,99 @@ export default function Home() {
                 </div>
               ) : (
                 <div className="space-y-8">
-                  {/* Image URL Input - Mode-specific */}
-                  {mode === 'image' && (
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2 mb-3">
-                        <div className="p-1.5 rounded-lg bg-gradient-to-br from-ocean-500/10 to-dream-500/10">
-                          <svg className="w-4 h-4 text-ocean-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  {/* Image Upload - Mode-specific */}
+                  {(mode === 'image' || mode === 'multi-image' || mode === 'multi-batch') && (
+                    <ImageUploadZone
+                      images={referenceImages}
+                      onChange={setReferenceImages}
+                      maxImages={mode === 'image' ? 1 : 14}
+                      mode={mode === 'image' ? 'single' : 'multi'}
+                    />
+                  )}
+
+                  {/* Multi-batch info banner - shown only for multi-batch mode */}
+                  {mode === 'multi-batch' && (
+                    <div className="rounded-xl border border-purple-500/30 bg-gradient-to-br from-purple-500/10 to-purple-500/5 p-4">
+                      <div className="flex items-start gap-3">
+                        <div className="p-2 rounded-lg bg-purple-500/10">
+                          <svg className="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                          </svg>
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-semibold text-purple-600 dark:text-purple-400">Multi-Image to Batch Generation</h4>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Upload 2-14 reference images, then describe what variations to generate.
+                            The AI will create multiple outputs based on your reference images and prompt.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Batch Mode Toggle - only show for non-multi-batch modes */}
+                  {mode !== 'multi-batch' && (
+                    <BatchModeToggle
+                      mode={mode}
+                      referenceImageCount={referenceImageCount}
+                      batchEnabled={batchMode}
+                      maxImages={maxImages}
+                      onBatchEnabledChange={setBatchMode}
+                      onMaxImagesChange={setMaxImages}
+                    />
+                  )}
+
+                  {/* Max Images Slider - shown for multi-batch when images are uploaded */}
+                  {mode === 'multi-batch' && referenceImageCount >= 2 && (
+                    <div className="space-y-4 rounded-xl border border-border bg-card/50 p-6">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500/10 to-purple-500/5">
+                          <svg className="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                           </svg>
                         </div>
                         <div>
-                          <h3 className="text-sm font-semibold">Reference Image</h3>
+                          <h3 className="text-sm font-semibold">Output Images</h3>
                           <p className="text-xs text-muted-foreground">
-                            Direct link ending in .jpg, .jpeg, or .png
+                            How many images to generate
                           </p>
                         </div>
                       </div>
-                      <ImageUrlInput
-                        value={referenceImageUrl}
-                        onChange={setReferenceImageUrl}
-                      />
+
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <label className="text-sm font-medium">Number of Images</label>
+                          <div className="flex items-center gap-2">
+                            <span className="text-2xl font-bold bg-gradient-to-r from-ocean-500 to-dream-500 bg-clip-text text-transparent">
+                              {maxImages}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              / {Math.max(1, 15 - referenceImageCount)}
+                            </span>
+                          </div>
+                        </div>
+
+                        <input
+                          type="range"
+                          min="1"
+                          max={Math.max(1, 15 - referenceImageCount)}
+                          value={maxImages}
+                          onChange={(e) => setMaxImages(parseInt(e.target.value, 10))}
+                          className="w-full h-2 rounded-lg cursor-pointer appearance-none"
+                          style={{
+                            background: `linear-gradient(to right, oklch(0.55 0.18 245), oklch(0.75 0.20 185) ${((maxImages - 1) / Math.max(1, 15 - referenceImageCount - 1)) * 100}%, hsl(var(--muted)) ${((maxImages - 1) / Math.max(1, 15 - referenceImageCount - 1)) * 100}%)`,
+                          }}
+                        />
+
+                        <p className="text-xs text-muted-foreground">
+                          With {referenceImageCount} reference images, you can generate up to {Math.max(1, 15 - referenceImageCount)} output images
+                          <span className="block mt-1 text-[10px] text-muted-foreground/60">
+                            (Constraint: {referenceImageCount} refs + {maxImages} outputs = {referenceImageCount + maxImages} ≤ 15 total)
+                          </span>
+                        </p>
+                      </div>
                     </div>
                   )}
-
-                  {mode === 'multi-image' && (
-                    <MultiImageInput
-                      urls={referenceImageUrls}
-                      onChange={setReferenceImageUrls}
-                      minImages={2}
-                      maxImages={10}
-                    />
-                  )}
-
-                  {/* Batch Mode Toggle */}
-                  <BatchModeToggle
-                    mode={mode}
-                    referenceImageCount={referenceImageCount}
-                    batchEnabled={batchMode}
-                    maxImages={maxImages}
-                    onBatchEnabledChange={setBatchMode}
-                    onMaxImagesChange={setMaxImages}
-                  />
 
                   {/* Prompt Input */}
                   <PromptInput value={prompt} onChange={setPrompt} mode={mode} />
@@ -254,54 +313,81 @@ export default function Home() {
 
                   {/* Generate Button */}
                   <div className="pt-4 space-y-3">
-                    <motion.button
-                      onClick={handleGenerate}
-                      disabled={!prompt || !hasApiKey}
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      className="w-full rounded-xl bg-gradient-to-r from-ocean-500 to-dream-500 px-8 py-4 text-base font-semibold text-white shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 relative overflow-hidden group"
-                    >
-                      {/* Shine effect on hover */}
-                      <div className="absolute inset-0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+                    {(() => {
+                      // Determine if generate is disabled
+                      const needsMoreImages = mode === 'multi-batch' && referenceImageCount < 2;
+                      const needsImages = (mode === 'image' || mode === 'multi-image') && referenceImageCount < (mode === 'image' ? 1 : 2);
+                      const isDisabled = !prompt || !hasApiKey || needsMoreImages || needsImages;
 
-                      <span className="relative flex items-center justify-center gap-2">
-                        <span>Generate Image</span>
-                        {prompt && hasApiKey && (
-                          <motion.span
-                            initial={{ rotate: 0 }}
-                            animate={{ rotate: 360 }}
-                            transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
-                            className="inline-block"
+                      return (
+                        <>
+                          <motion.button
+                            onClick={handleGenerate}
+                            disabled={isDisabled}
+                            whileHover={{ scale: 1.02 }}
+                            whileTap={{ scale: 0.98 }}
+                            className="w-full rounded-xl bg-gradient-to-r from-ocean-500 to-dream-500 px-8 py-4 text-base font-semibold text-white shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 relative overflow-hidden group"
                           >
-                            ✨
-                          </motion.span>
-                        )}
-                      </span>
-                    </motion.button>
+                            {/* Shine effect on hover */}
+                            <div className="absolute inset-0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/20 to-transparent" />
 
-                    {/* Error message */}
-                    {error && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -5 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="p-4 rounded-xl bg-red-500/10 border border-red-500/20"
-                      >
-                        <p className="text-sm text-red-600 dark:text-red-400 text-center">
-                          {error}
-                        </p>
-                      </motion.div>
-                    )}
+                            <span className="relative flex items-center justify-center gap-2">
+                              <span>
+                                {mode === 'multi-batch'
+                                  ? `Generate ${maxImages} Image${maxImages > 1 ? 's' : ''}`
+                                  : batchMode
+                                    ? `Generate ${maxImages} Image${maxImages > 1 ? 's' : ''}`
+                                    : 'Generate Image'}
+                              </span>
+                              {prompt && hasApiKey && !isDisabled && (
+                                <motion.span
+                                  initial={{ rotate: 0 }}
+                                  animate={{ rotate: 360 }}
+                                  transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+                                  className="inline-block"
+                                >
+                                  ✨
+                                </motion.span>
+                              )}
+                            </span>
+                          </motion.button>
 
-                    {/* Helper text */}
-                    {(!prompt || !hasApiKey) && !error && (
-                      <motion.p
-                        initial={{ opacity: 0, y: -5 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="text-xs text-center text-muted-foreground"
-                      >
-                        {!hasApiKey ? 'Enter your API key above to get started' : 'Write a prompt to begin'}
-                      </motion.p>
-                    )}
+                          {/* Error message */}
+                          {error && (
+                            <motion.div
+                              initial={{ opacity: 0, y: -5 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              className="p-4 rounded-xl bg-red-500/10 border border-red-500/20"
+                            >
+                              <p className="text-sm text-red-600 dark:text-red-400 text-center">
+                                {error}
+                              </p>
+                            </motion.div>
+                          )}
+
+                          {/* Helper text */}
+                          {!error && (
+                            <motion.p
+                              initial={{ opacity: 0, y: -5 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              className="text-xs text-center text-muted-foreground"
+                            >
+                              {!hasApiKey
+                                ? 'Enter your API key above to get started'
+                                : needsMoreImages
+                                  ? 'Upload at least 2 reference images for batch generation'
+                                  : needsImages
+                                    ? mode === 'image'
+                                      ? 'Upload a reference image'
+                                      : 'Upload at least 2 reference images'
+                                    : !prompt
+                                      ? 'Write a prompt to begin'
+                                      : null}
+                            </motion.p>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
               )}

@@ -19,6 +19,7 @@ interface BatchModeToggleProps {
  * - Text mode: up to 15 images
  * - Image mode (1 ref): up to 14 images
  * - Multi-image mode (n refs): up to (15 - n) images
+ * - Multi-batch mode (n refs): up to (15 - n) images (batch is always enabled)
  */
 function calculateMaxImagesLimit(mode: GenerationMode, referenceImageCount: number): number {
   if (mode === 'text') {
@@ -26,7 +27,7 @@ function calculateMaxImagesLimit(mode: GenerationMode, referenceImageCount: numb
   } else if (mode === 'image') {
     return PARAMETER_CONSTRAINTS.batch.maxImagesWithSingleRef;
   } else {
-    // multi-image: total input + output <= 15
+    // multi-image and multi-batch: total input + output <= 15
     return Math.max(1, PARAMETER_CONSTRAINTS.batch.maxImagesConstraint - referenceImageCount);
   }
 }
@@ -189,7 +190,7 @@ export function BatchModeToggle({
               <p>
                 {mode === 'text' && `Generate up to ${maxLimit} related images from your prompt`}
                 {mode === 'image' && `Generate up to ${maxLimit} variations using your reference image`}
-                {mode === 'multi-image' && (
+                {(mode === 'multi-image' || mode === 'multi-batch') && (
                   <>
                     With {referenceImageCount} reference image{referenceImageCount > 1 ? 's' : ''},
                     generate up to {maxLimit} output image{maxLimit > 1 ? 's' : ''}

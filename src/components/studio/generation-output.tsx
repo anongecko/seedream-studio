@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { Download, Copy, Clock, ImageIcon, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Download, Copy, Clock, ImageIcon, ChevronLeft, ChevronRight, Grid3X3, Layers, Images } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import useEmblaCarousel from 'embla-carousel-react';
 import { cn, downloadBase64Image, copyImageToClipboard, formatFileSize, formatGenerationTime, estimateBase64Size } from '@/lib/utils';
 
@@ -46,6 +47,7 @@ export function GenerationOutput({
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [curlCopied, setCurlCopied] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [viewMode, setViewMode] = useState<'slideshow' | 'grid'>('slideshow');
 
   const isBatch = images.length > 1;
 
@@ -68,6 +70,18 @@ export function GenerationOutput({
       : `seedream-${timestamp}.png`;
     downloadBase64Image(images[index].base64, filename);
   }, [images, isBatch]);
+
+  // Handle download all (for batch)
+  const handleDownloadAll = useCallback(async () => {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    // Download each image with a small delay to avoid overwhelming the browser
+    for (let i = 0; i < images.length; i++) {
+      const filename = `seedream-${timestamp}-${i + 1}.png`;
+      downloadBase64Image(images[i].base64, filename);
+      // Small delay between downloads
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+  }, [images]);
 
   // Handle copy
   const handleCopy = useCallback(async (index: number) => {
@@ -155,152 +169,289 @@ export function GenerationOutput({
 
   return (
     <div className={cn('space-y-6', className)}>
-      {/* Batch header */}
+      {/* Batch header with controls */}
       {isBatch && (
-        <div className="flex items-center justify-between p-4 rounded-lg border border-border bg-gradient-to-br from-purple-500/5 to-purple-500/0">
-          <div className="flex items-center gap-2">
-            <ImageIcon className="w-5 h-5 text-purple-500" />
-            <span className="text-sm font-semibold">
-              Sequential Batch: {images.length} image{images.length > 1 ? 's' : ''}
-            </span>
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-xl border border-purple-500/30 bg-gradient-to-br from-purple-500/10 to-purple-500/5 p-4"
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            {/* Left: Info */}
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-purple-500/20">
+                <Layers className="w-5 h-5 text-purple-500" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-purple-600 dark:text-purple-400">
+                  Batch Generation Complete
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  {images.length} image{images.length > 1 ? 's' : ''} generated
+                  {maxImages && ` (requested ${maxImages})`}
+                </p>
+              </div>
+            </div>
+
+            {/* Right: Controls */}
+            <div className="flex items-center gap-2">
+              {/* View Mode Toggle */}
+              <div className="flex items-center rounded-lg bg-muted/50 p-1">
+                <button
+                  onClick={() => setViewMode('slideshow')}
+                  className={cn(
+                    'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all',
+                    viewMode === 'slideshow'
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  <Images className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Slideshow</span>
+                </button>
+                <button
+                  onClick={() => setViewMode('grid')}
+                  className={cn(
+                    'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all',
+                    viewMode === 'grid'
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground'
+                  )}
+                >
+                  <Grid3X3 className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Grid</span>
+                </button>
+              </div>
+
+              {/* Download All Button */}
+              <button
+                onClick={handleDownloadAll}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-ocean-500 to-dream-500 text-white text-xs font-medium hover:opacity-90 transition-all shadow-sm"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download All</span>
+              </button>
+            </div>
           </div>
-          {maxImages && (
-            <span className="text-xs text-muted-foreground">
-              Generated {images.length} of {maxImages} max
-            </span>
-          )}
-        </div>
+        </motion.div>
       )}
 
       {isBatch ? (
-        /* Batch: Slideshow + thumbnails */
-        <div className="space-y-4">
-          {/* Main slideshow */}
-          <div className="relative group">
-            <div className="overflow-hidden rounded-lg border border-border" ref={emblaRef}>
-              <div className="flex">
+        /* Batch: Slideshow or Grid view */
+        <AnimatePresence mode="wait">
+          {viewMode === 'slideshow' ? (
+            <motion.div
+              key="slideshow"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="space-y-4"
+            >
+              {/* Main slideshow */}
+              <div className="relative group">
+                <div className="overflow-hidden rounded-lg border border-border" ref={emblaRef}>
+                  <div className="flex">
+                    {images.map((image, index) => {
+                      const isLoaded = loadedImages.has(index);
+                      const imageDataUri = image.base64.startsWith('data:')
+                        ? image.base64
+                        : `data:image/png;base64,${image.base64}`;
+
+                      return (
+                        <div key={index} className="flex-[0_0_100%] min-w-0">
+                          <div className="relative w-full bg-muted" style={{ aspectRatio: '16/9' }}>
+                            {!isLoaded && (
+                              <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-muted via-muted-foreground/10 to-muted" />
+                            )}
+                            <img
+                              src={imageDataUri}
+                              alt={`Generated image ${index + 1}`}
+                              className={cn(
+                                'w-full h-full object-contain transition-opacity duration-300',
+                                isLoaded ? 'opacity-100' : 'opacity-0'
+                              )}
+                              onLoad={() => handleImageLoad(index)}
+                              loading="lazy"
+                            />
+                            <div className="absolute top-4 left-4 px-3 py-1.5 rounded-full bg-black/70 backdrop-blur-sm text-white text-sm font-medium">
+                              {index + 1} / {images.length}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Navigation buttons */}
+                <button
+                  onClick={scrollPrev}
+                  disabled={!canScrollPrev}
+                  className={cn(
+                    'absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full',
+                    'bg-black/70 backdrop-blur-sm text-white flex items-center justify-center',
+                    'transition-all hover:bg-black/90 hover:scale-110',
+                    'disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:scale-100',
+                    'opacity-0 group-hover:opacity-100'
+                  )}
+                >
+                  <ChevronLeft className="w-6 h-6" />
+                </button>
+                <button
+                  onClick={scrollNext}
+                  disabled={!canScrollNext}
+                  className={cn(
+                    'absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full',
+                    'bg-black/70 backdrop-blur-sm text-white flex items-center justify-center',
+                    'transition-all hover:bg-black/90 hover:scale-110',
+                    'disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:scale-100',
+                    'opacity-0 group-hover:opacity-100'
+                  )}
+                >
+                  <ChevronRight className="w-6 h-6" />
+                </button>
+              </div>
+
+              {/* Thumbnail strip */}
+              <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-12 gap-2">
                 {images.map((image, index) => {
-                  const isLoaded = loadedImages.has(index);
                   const imageDataUri = image.base64.startsWith('data:')
                     ? image.base64
                     : `data:image/png;base64,${image.base64}`;
 
                   return (
-                    <div key={index} className="flex-[0_0_100%] min-w-0">
-                      <div className="relative w-full bg-muted" style={{ aspectRatio: '16/9' }}>
-                        {!isLoaded && (
-                          <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-muted via-muted-foreground/10 to-muted" />
-                        )}
-                        <img
-                          src={imageDataUri}
-                          alt={`Generated image ${index + 1}`}
-                          className={cn(
-                            'w-full h-full object-contain transition-opacity duration-300',
-                            isLoaded ? 'opacity-100' : 'opacity-0'
-                          )}
-                          onLoad={() => handleImageLoad(index)}
-                          loading="lazy"
-                        />
-                        <div className="absolute top-4 left-4 px-3 py-1.5 rounded-full bg-black/70 backdrop-blur-sm text-white text-sm font-medium">
-                          {index + 1} / {images.length}
-                        </div>
+                    <button
+                      key={index}
+                      onClick={() => scrollTo(index)}
+                      className={cn(
+                        'relative aspect-square rounded-md overflow-hidden border-2 transition-all',
+                        selectedIndex === index
+                          ? 'border-ocean-500 ring-2 ring-ocean-500/50 scale-105'
+                          : 'border-border hover:border-ocean-300'
+                      )}
+                    >
+                      <img
+                        src={imageDataUri}
+                        alt={`Thumbnail ${index + 1}`}
+                        className="w-full h-full object-cover"
+                        loading="lazy"
+                      />
+                      <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-[10px] text-center py-0.5">
+                        #{index + 1}
                       </div>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
-            </div>
 
-            {/* Navigation buttons */}
-            <button
-              onClick={scrollPrev}
-              disabled={!canScrollPrev}
-              className={cn(
-                'absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full',
-                'bg-black/70 backdrop-blur-sm text-white flex items-center justify-center',
-                'transition-all hover:bg-black/90 hover:scale-110',
-                'disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:scale-100',
-                'opacity-0 group-hover:opacity-100'
-              )}
+              {/* Selected image actions */}
+              <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30">
+                <div className="text-sm text-muted-foreground">
+                  <span className="font-medium">Image #{selectedIndex + 1}:</span>{' '}
+                  {images[selectedIndex].size}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleCopy(selectedIndex)}
+                    disabled={copyingIndex === selectedIndex}
+                    className={cn(
+                      'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm',
+                      'border border-input hover:bg-accent transition-colors',
+                      copiedIndex === selectedIndex && 'bg-green-500/10 text-green-600 border-green-500/50'
+                    )}
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    {copiedIndex === selectedIndex ? 'Copied!' : 'Copy'}
+                  </button>
+                  <button
+                    onClick={() => handleDownload(selectedIndex)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm border border-input hover:bg-accent transition-colors"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Download
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          ) : (
+            /* Grid view */
+            <motion.div
+              key="grid"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4"
             >
-              <ChevronLeft className="w-6 h-6" />
-            </button>
-            <button
-              onClick={scrollNext}
-              disabled={!canScrollNext}
-              className={cn(
-                'absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full',
-                'bg-black/70 backdrop-blur-sm text-white flex items-center justify-center',
-                'transition-all hover:bg-black/90 hover:scale-110',
-                'disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:scale-100',
-                'opacity-0 group-hover:opacity-100'
-              )}
-            >
-              <ChevronRight className="w-6 h-6" />
-            </button>
-          </div>
+              {images.map((image, index) => {
+                const isLoaded = loadedImages.has(index);
+                const imageDataUri = image.base64.startsWith('data:')
+                  ? image.base64
+                  : `data:image/png;base64,${image.base64}`;
 
-          {/* Thumbnail grid */}
-          <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-12 gap-2">
-            {images.map((image, index) => {
-              const imageDataUri = image.base64.startsWith('data:')
-                ? image.base64
-                : `data:image/png;base64,${image.base64}`;
+                return (
+                  <motion.div
+                    key={index}
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: index * 0.05 }}
+                    className="group relative"
+                  >
+                    <div className="relative aspect-square rounded-xl overflow-hidden border border-border bg-muted">
+                      {!isLoaded && (
+                        <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-muted via-muted-foreground/10 to-muted" />
+                      )}
+                      <img
+                        src={imageDataUri}
+                        alt={`Generated image ${index + 1}`}
+                        className={cn(
+                          'w-full h-full object-cover transition-all duration-300',
+                          isLoaded ? 'opacity-100' : 'opacity-0',
+                          'group-hover:scale-105'
+                        )}
+                        onLoad={() => handleImageLoad(index)}
+                        loading="lazy"
+                      />
 
-              return (
-                <button
-                  key={index}
-                  onClick={() => scrollTo(index)}
-                  className={cn(
-                    'relative aspect-square rounded-md overflow-hidden border-2 transition-all',
-                    selectedIndex === index
-                      ? 'border-ocean-500 ring-2 ring-ocean-500/50 scale-105'
-                      : 'border-border hover:border-ocean-300'
-                  )}
-                >
-                  <img
-                    src={imageDataUri}
-                    alt={`Thumbnail ${index + 1}`}
-                    className="w-full h-full object-cover"
-                    loading="lazy"
-                  />
-                  <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-[10px] text-center py-0.5">
-                    #{index + 1}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+                      {/* Index badge */}
+                      <div className="absolute top-2 left-2 px-2 py-1 rounded-full bg-black/70 backdrop-blur-sm text-white text-xs font-medium">
+                        #{index + 1}
+                      </div>
 
-          {/* Selected image actions */}
-          <div className="flex items-center justify-between p-3 rounded-lg border border-border bg-muted/30">
-            <div className="text-sm text-muted-foreground">
-              <span className="font-medium">Image #{selectedIndex + 1}:</span>{' '}
-              {images[selectedIndex].size}
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => handleCopy(selectedIndex)}
-                disabled={copyingIndex === selectedIndex}
-                className={cn(
-                  'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm',
-                  'border border-input hover:bg-accent transition-colors',
-                  copiedIndex === selectedIndex && 'bg-green-500/10 text-green-600 border-green-500/50'
-                )}
-              >
-                <Copy className="h-3.5 w-3.5" />
-                {copiedIndex === selectedIndex ? 'Copied!' : 'Copy'}
-              </button>
-              <button
-                onClick={() => handleDownload(selectedIndex)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm border border-input hover:bg-accent transition-colors"
-              >
-                <Download className="h-3.5 w-3.5" />
-                Download
-              </button>
-            </div>
-          </div>
-        </div>
+                      {/* Hover overlay with actions */}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-center pb-4">
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleCopy(index)}
+                            disabled={copyingIndex === index}
+                            className={cn(
+                              'p-2 rounded-full bg-white/20 backdrop-blur-sm text-white hover:bg-white/30 transition-all',
+                              copiedIndex === index && 'bg-green-500/50'
+                            )}
+                            title="Copy to clipboard"
+                          >
+                            <Copy className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDownload(index)}
+                            className="p-2 rounded-full bg-white/20 backdrop-blur-sm text-white hover:bg-white/30 transition-all"
+                            title="Download"
+                          >
+                            <Download className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Size label */}
+                    <p className="mt-2 text-xs text-muted-foreground text-center">
+                      {image.size}
+                    </p>
+                  </motion.div>
+                );
+              })}
+            </motion.div>
+          )}
+        </AnimatePresence>
       ) : (
         /* Single image display */
         <div className="space-y-4">
