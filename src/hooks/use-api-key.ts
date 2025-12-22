@@ -41,6 +41,6 @@ export function useApiKey() {
     setApiKey,
     clearApiKey,
     hasApiKey,
-    isLoaded, // Useful to prevent hydration issues
+    isLoaded,
   };
 }

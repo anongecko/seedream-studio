@@ -17,6 +17,7 @@ interface GenerationOutputProps {
   onSaveAsPreset?: () => void;
   // For cURL export
   mode?: string;
+  model?: string;
   size?: string;
   quality?: string;
   batchMode?: boolean;
@@ -36,6 +37,7 @@ export function GenerationOutput({
   className,
   onSaveAsPreset,
   mode,
+  model,
   size,
   quality,
   batchMode,
@@ -133,8 +135,9 @@ export function GenerationOutput({
     if (!prompt) return '';
 
     const apiUrl = process.env.NEXT_PUBLIC_SEEDREAM_API_URL || 'https://ark.ap-southeast.bytepluses.com/api/v3';
+    const modelVersion = model === 'seedream-4-0' ? 'seedream-4-0-250828' : 'seedream-4-5-251128';
     const requestBody: any = {
-      model: 'seedream-4-0-250828',
+      model: modelVersion,
       prompt,
       sequential_image_generation: batchMode ? 'auto' : 'disabled',
       response_format: 'b64_json',
@@ -144,6 +147,15 @@ export function GenerationOutput({
 
     if (batchMode && maxImages) {
       requestBody.sequential_image_generation_options = { max_images: maxImages };
+    }
+
+    // Model-specific quality parameter
+    if (model === 'seedream-4-0') {
+      requestBody.quality = quality;
+    } else {
+      requestBody.optimize_prompt_options = {
+        mode: quality,
+      };
     }
 
     if (referenceImageUrls && referenceImageUrls.length > 0) {
@@ -522,20 +534,27 @@ export function GenerationOutput({
       {/* Global metadata and actions */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-t pt-4">
         <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-          <div className="flex items-center gap-1.5">
-            <ImageIcon className="h-4 w-4" />
-            <span>{images.length} image{images.length > 1 ? 's' : ''}</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span>{formatFileSize(totalEstimatedSize)}</span>
-          </div>
-          {generationTimeMs !== undefined && (
-            <div className="flex items-center gap-1.5">
-              <Clock className="h-4 w-4" />
-              <span>{formatGenerationTime(generationTimeMs)}</span>
-            </div>
-          )}
-        </div>
+           <div className="flex items-center gap-1.5">
+             <ImageIcon className="h-4 w-4" />
+             <span>{images.length} image{images.length > 1 ? 's' : ''}</span>
+           </div>
+           <div className="flex items-center gap-1.5">
+             <span>{formatFileSize(totalEstimatedSize)}</span>
+           </div>
+           {model && (
+             <div className="flex items-center gap-1.5">
+               <span className="px-2 py-0.5 rounded-full bg-gradient-to-r from-blue-500/10 to-purple-500/10 text-blue-600 dark:text-blue-400 text-xs font-medium border border-blue-500/20">
+                 {model === 'seedream-4-0' ? '4.0 Uncensored' : '4.5 Censored'}
+               </span>
+             </div>
+           )}
+           {generationTimeMs !== undefined && (
+             <div className="flex items-center gap-1.5">
+               <Clock className="h-4 w-4" />
+               <span>{formatGenerationTime(generationTimeMs)}</span>
+             </div>
+           )}
+         </div>
 
         <div className="flex flex-wrap gap-2">
           <button

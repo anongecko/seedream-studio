@@ -15,7 +15,8 @@ import { GenerationOutput } from '@/components/studio/generation-output';
 import { ImageUploadZone, filesToBase64, type ImageFile } from '@/components/studio/image-upload-zone';
 import { useApiKey } from '@/hooks/use-api-key';
 import { useGeneration } from '@/hooks/use-generation';
-import type { GenerationMode, Quality } from '@/types/api';
+import { useModelSelection } from '@/hooks/use-model';
+import type { GenerationMode, Quality, SeedreamModel } from '@/types/api';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -51,6 +52,7 @@ const SIZE_OPTIONS = [
 export default function Home() {
   // Use custom hooks
   const { apiKey, setApiKey, hasApiKey } = useApiKey();
+  const { selectedModel, setSelectedModel } = useModelSelection();
   const { generate, isGenerating, error, result, clearResult } = useGeneration();
 
   // UI state
@@ -82,6 +84,8 @@ export default function Home() {
     }
   }, [mode]);
 
+
+
   // Handle image generation
   const handleGenerate = async () => {
     if (!prompt || !hasApiKey) return;
@@ -105,6 +109,7 @@ export default function Home() {
       apiKey,
       prompt,
       mode,
+      model: selectedModel,
       images,
       size: apiSize,
       quality,
@@ -115,7 +120,7 @@ export default function Home() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <Header />
+      <Header selectedModel={selectedModel} onModelChange={setSelectedModel} />
 
       {/* API Preview Panel - Floating on the right */}
       <ApiPreviewPanel
@@ -128,6 +133,7 @@ export default function Home() {
         referenceImageUrls={
           referenceImages.filter(img => img.validation.valid).map(() => '[base64 image data]')
         }
+        model={selectedModel}
       />
 
       <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-8">
@@ -146,14 +152,18 @@ export default function Home() {
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
               Transform your ideas into stunning visuals with{' '}
               <span className="bg-gradient-to-r from-ocean-500 to-dream-500 bg-clip-text text-transparent font-semibold">
-                Seedream 4.5
+                Seedream {selectedModel === 'seedream-4-0' ? '4.0' : '4.5'}
               </span>
             </p>
           </motion.div>
 
           {/* API Key Setup */}
           <motion.div variants={itemVariants}>
-            <ApiKeySetup apiKey={apiKey} onApiKeyChange={setApiKey} />
+            <ApiKeySetup
+              apiKey={apiKey}
+              onApiKeyChange={setApiKey}
+              model={selectedModel}
+            />
           </motion.div>
 
           {/* Mode Tabs */}
@@ -179,17 +189,18 @@ export default function Home() {
               ) : result ? (
                 // Show generation result
                 <div className="space-y-8">
-                  <GenerationOutput
-                    images={result.images}
-                    generationTimeMs={0}
-                    prompt={result.prompt}
-                    mode={result.mode}
-                    size={result.parameters.size}
-                    quality={result.parameters.quality}
-                    batchMode={result.parameters.batchMode}
-                    maxImages={result.parameters.maxImages}
-                    referenceImageUrls={result.referenceImageUrls}
-                  />
+                   <GenerationOutput
+                     images={result.images}
+                     generationTimeMs={0}
+                     prompt={result.prompt}
+                     mode={result.mode}
+                     model={result.model}
+                     size={result.parameters.size}
+                     quality={result.parameters.quality}
+                     batchMode={result.parameters.batchMode}
+                     maxImages={result.parameters.maxImages}
+                     referenceImageUrls={result.referenceImageUrls}
+                   />
 
                   {/* Generate another button */}
                   <motion.button
@@ -208,8 +219,9 @@ export default function Home() {
                     <ImageUploadZone
                       images={referenceImages}
                       onChange={setReferenceImages}
-                      maxImages={mode === 'image' ? 1 : 14}
+                      maxImages={mode === 'image' ? 1 : undefined}
                       mode={mode === 'image' ? 'single' : 'multi'}
+                      model={selectedModel}
                     />
                   )}
 
@@ -297,13 +309,13 @@ export default function Home() {
                     </div>
                   )}
 
-                  {/* Prompt Input */}
-                  <PromptInput value={prompt} onChange={setPrompt} mode={mode} />
+                   {/* Prompt Input */}
+                   <PromptInput value={prompt} onChange={setPrompt} mode={mode} model={selectedModel} />
 
                   {/* Parameters Grid */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     {/* Size Selector */}
-                    <SizeSelector value={size} onChange={setSize} />
+                    <SizeSelector value={size} onChange={setSize} model={selectedModel} />
 
                     {/* Quality Only */}
                     <div className="space-y-8">
@@ -463,7 +475,7 @@ export default function Home() {
                   whileHover={{ scale: 1.05 }}
                   transition={{ type: 'spring', stiffness: 400, damping: 25 }}
                 >
-                  BytePlus Seedream 4.0
+                   BytePlus Seedream {selectedModel === 'seedream-4-0' ? '4.0' : '4.5'}
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                   </svg>

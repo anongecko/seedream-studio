@@ -1,11 +1,17 @@
 'use client';
 
-import * as React from 'react';
 import { Waves, Sparkles } from 'lucide-react';
 import { ThemeToggle } from './theme-toggle';
+import { ModelToggle } from './model-toggle';
 import { motion } from 'framer-motion';
+import type { SeedreamModel } from '@/types/api';
 
-export function Header() {
+interface HeaderProps {
+  selectedModel: SeedreamModel;
+  onModelChange: (model: SeedreamModel) => void;
+}
+
+export function Header({ selectedModel, onModelChange }: HeaderProps) {
   return (
     <motion.header
       initial={{ opacity: 0, y: -20 }}
@@ -13,8 +19,8 @@ export function Header() {
       transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
       className="sticky top-0 z-50 w-full border-b border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
     >
-      <div className="container flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
-        {/* Logo */}
+      <div className="flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8 max-w-screen-2xl mx-auto w-full">
+        {/* Left side - Logo */}
         <motion.div
           className="flex items-center gap-3 cursor-default select-none"
           whileHover={{ scale: 1.02 }}
@@ -52,8 +58,13 @@ export function Header() {
           </div>
         </motion.div>
 
+        {/* Center - Model Toggle */}
+        <div className="flex-1 flex justify-center mx-4">
+          <ModelToggle selectedModel={selectedModel} onModelChange={onModelChange} />
+        </div>
+
         {/* Right side - Theme Toggle */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center">
           <ThemeToggle />
         </div>
       </div>

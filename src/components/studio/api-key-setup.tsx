@@ -4,9 +4,12 @@ import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Key, CheckCircle, AlertCircle, Eye, EyeOff } from 'lucide-react';
 
+import type { SeedreamModel } from '@/types/api';
+
 interface ApiKeySetupProps {
   apiKey: string; // Passed from parent for controlled component
   onApiKeyChange: (key: string) => void; // Callback to parent
+  model?: SeedreamModel;
   className?: string;
 }
 
@@ -33,7 +36,12 @@ function validateApiKeyFormat(key: string): { isValid: boolean; message?: string
   return { isValid: true };
 }
 
-export function ApiKeySetup({ apiKey, onApiKeyChange, className = '' }: ApiKeySetupProps) {
+export function ApiKeySetup({
+  apiKey,
+  onApiKeyChange,
+  model = 'seedream-4-5',
+  className = ''
+}: ApiKeySetupProps) {
   const [localKey, setLocalKey] = React.useState(apiKey);
   const [isVisible, setIsVisible] = React.useState(false);
   const [isFocused, setIsFocused] = React.useState(false);
@@ -92,15 +100,16 @@ export function ApiKeySetup({ apiKey, onApiKeyChange, className = '' }: ApiKeySe
                 <div>
                   <h3 className="text-lg font-semibold mb-1">Enter your API Key</h3>
                   <p className="text-sm text-muted-foreground">
-                    Get your BytePlus Seedream API key from{' '}
+                    Get your BytePlus Seedream {model === 'seedream-4-0' ? '4.0' : '4.5'} API key from{' '}
                     <a
                       href="https://console.byteplus.com"
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-ocean-500 hover:underline font-medium"
                     >
-                      console.byteplus.com
+                      BytePlus Console
                     </a>
+                    .
                   </p>
                 </div>
 

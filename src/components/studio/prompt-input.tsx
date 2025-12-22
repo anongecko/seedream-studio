@@ -3,12 +3,13 @@
 import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AlertCircle, Sparkles } from 'lucide-react';
-import type { GenerationMode } from '@/types/api';
+import type { GenerationMode, SeedreamModel } from '@/types/api';
 
 interface PromptInputProps {
   value: string;
   onChange: (value: string) => void;
   mode: GenerationMode;
+  model?: SeedreamModel;
   className?: string;
 }
 
@@ -29,7 +30,7 @@ const MODE_EXAMPLES: Record<string, string> = {
   'multi-batch': 'Generate 3 images showing the subjects at morning, noon, and night, maintaining consistent style and composition',
 };
 
-export function PromptInput({ value, onChange, mode, className = '' }: PromptInputProps) {
+export function PromptInput({ value, onChange, mode, model = 'seedream-4-5', className = '' }: PromptInputProps) {
   const [isFocused, setIsFocused] = React.useState(false);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
@@ -211,7 +212,7 @@ export function PromptInput({ value, onChange, mode, className = '' }: PromptInp
           className="text-xs text-muted-foreground/80 flex items-center gap-1.5"
         >
           <span className="inline-block w-1 h-1 rounded-full bg-muted-foreground/40" />
-          Seedream 4.0 works best with prompts under 600 words
+          Seedream {model === 'seedream-4-0' ? '4.0' : '4.5'} works best with prompts under 600 words
         </motion.p>
       </div>
     </div>

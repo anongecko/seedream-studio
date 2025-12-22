@@ -6,8 +6,9 @@ import type {
   GenerationMode,
   Quality,
   ResponseFormat,
+  SeedreamModel,
 } from '@/types/api';
-import { DEFAULTS } from '@/constants/parameters';
+import { getModelDefaults, getModelConstraints } from '@/constants/parameters';
 
 /**
  * Seedream API client with Supabase integration
@@ -35,6 +36,7 @@ export class SeedreamClient {
   async generate(params: {
     prompt: string;
     mode: GenerationMode;
+    model: SeedreamModel;
     images?: string[];
     size?: string;
     quality?: Quality;
@@ -77,7 +79,7 @@ export class SeedreamClient {
 
       // Save to Supabase (default: true)
       if (params.saveToDatabase !== false) {
-        await this.saveToDatabase(request, result, generationTime, params.mode);
+        await this.saveToDatabase(request, result, generationTime, params.mode, params.model);
       }
 
       return result;
@@ -94,11 +96,12 @@ export class SeedreamClient {
 
   /**
    * Build complete request with defaults and proper formatting
-   * Maps quality parameter to Seedream 4.5's optimize_prompt_options
+   * Handles model-specific parameter mapping
    */
   private buildRequest(params: {
     prompt: string;
     mode: GenerationMode;
+    model: SeedreamModel;
     images?: string[];
     size?: string;
     quality?: Quality;
@@ -112,20 +115,30 @@ export class SeedreamClient {
       imageInput = params.images.length === 1 ? params.images[0] : params.images;
     }
 
+    const defaults = getModelDefaults(params.model);
+    const modelVersion = params.model === 'seedream-4-0' ? 'seedream-4-0-250828' : 'seedream-4-5-251128';
+
     const request: SeedreamRequest = {
-      model: DEFAULTS.model,
+      model: modelVersion,
       prompt: params.prompt,
       image: imageInput,
-      size: params.size || DEFAULTS.size,
-      // Seedream 4.5: quality parameter replaced with optimize_prompt_options
-      optimize_prompt_options: {
-        mode: params.quality || DEFAULTS.quality, // Maps 'standard' | 'fast' to optimize_prompt_options.mode
-      },
+      size: params.size || defaults.size,
       sequential_image_generation: params.batchMode ? 'auto' : 'disabled',
-      response_format: params.responseFormat || DEFAULTS.responseFormat,
-      stream: DEFAULTS.stream,
-      watermark: DEFAULTS.watermark,
+      response_format: params.responseFormat || defaults.responseFormat,
+      stream: defaults.stream,
+      watermark: defaults.watermark,
     };
+
+    // Model-specific quality parameter handling
+    if (params.model === 'seedream-4-0') {
+      // Seedream 4.0 uses 'quality' parameter
+      request.quality = params.quality || defaults.quality;
+    } else {
+      // Seedream 4.5 uses 'optimize_prompt_options'
+      request.optimize_prompt_options = {
+        mode: params.quality || defaults.quality,
+      };
+    }
 
     // Add batch options if batch mode enabled
     if (params.batchMode && params.maxImages) {
@@ -141,16 +154,20 @@ export class SeedreamClient {
    * Validate request parameters before sending
    */
   private validateRequest(request: SeedreamRequest): void {
+    // Determine model from request
+    const model: SeedreamModel = request.model === 'seedream-4-0-250828' ? 'seedream-4-0' : 'seedream-4-5';
+    const constraints = getModelConstraints(model);
+
     // Validate prompt
     if (!request.prompt || request.prompt.trim().length === 0) {
       throw new Error('Prompt is required and cannot be empty');
     }
 
-    // Validate image count (Seedream 4.5: max 14 reference images)
+    // Validate image count based on model
     if (request.image) {
       const images = Array.isArray(request.image) ? request.image : [request.image];
-      if (images.length > 14) {
-        throw new Error('Maximum 14 reference images allowed');
+      if (images.length > constraints.imageUrl.maxCount) {
+        throw new Error(`Maximum ${constraints.imageUrl.maxCount} reference images allowed for ${model}`);
       }
       if (images.length < 1) {
         throw new Error('At least 1 reference image required when using image mode');
@@ -177,21 +194,23 @@ export class SeedreamClient {
     }
 
     // Validate size format
-    if (request.size && !this.isValidSize(request.size)) {
+    if (request.size && !this.isValidSize(request.size, model)) {
+      const constraints = getModelConstraints(model);
+      const presets = constraints.size.presets.join(', ');
       throw new Error(
-        'Invalid size format. Use presets (2K, 4K) or WIDTHxHEIGHT with minimum 2560x1440 pixels (e.g., 2048x2048)'
+        `Invalid size format for ${model}. Use presets (${presets}) or WIDTHxHEIGHT with minimum ${constraints.size.minTotalPixels} pixels`
       );
     }
   }
 
   /**
-   * Validate size parameter format for Seedream 4.5
-   * Minimum total pixels: 2560x1440 (3,686,400)
-   * No '1K' preset support
+   * Validate size parameter format based on model
    */
-  private isValidSize(size: string): boolean {
-    // Check if it's a preset (Seedream 4.5: only '2K' and '4K')
-    if (['2K', '4K'].includes(size)) {
+  private isValidSize(size: string, model: SeedreamModel): boolean {
+    const constraints = getModelConstraints(model);
+
+    // Check if it's a preset
+    if (constraints.size.presets.includes(size as any)) {
       return true;
     }
 
@@ -204,18 +223,15 @@ export class SeedreamClient {
     const width = parseInt(match[1], 10);
     const height = parseInt(match[2], 10);
 
-    // Seedream 4.5: Minimum total pixels is 3,686,400 (2560x1440)
+    // Validate total pixels
     const totalPixels = width * height;
-    const minTotalPixels = 2560 * 1440; // 3,686,400
-    const maxTotalPixels = 4096 * 4096; // 16,777,216
-
-    if (totalPixels < minTotalPixels || totalPixels > maxTotalPixels) {
+    if (totalPixels < constraints.size.minTotalPixels || totalPixels > constraints.size.maxTotalPixels) {
       return false;
     }
 
     // Validate aspect ratio
     const aspectRatio = width / height;
-    if (aspectRatio < 1 / 16 || aspectRatio > 16) {
+    if (aspectRatio < constraints.size.aspectRatioRange.min || aspectRatio > constraints.size.aspectRatioRange.max) {
       return false;
     }
 
@@ -230,7 +246,8 @@ export class SeedreamClient {
     request: SeedreamRequest,
     response: SeedreamResponse,
     generationTime: number,
-    originalMode?: GenerationMode
+    originalMode: GenerationMode,
+    model: SeedreamModel
   ): Promise<void> {
     try {
       // Determine mode from request
@@ -256,8 +273,10 @@ export class SeedreamClient {
           prompt: request.prompt,
           mode,
           reference_image_urls: images.length > 0 ? images : null,
-          size: request.size || DEFAULTS.size,
-          quality: request.optimize_prompt_options?.mode || DEFAULTS.quality, // Extract from optimize_prompt_options
+          size: request.size,
+          quality: model === 'seedream-4-0'
+            ? (request.quality as Quality)
+            : (request.optimize_prompt_options?.mode as Quality),
           batch_mode: request.sequential_image_generation === 'auto',
           max_images: request.sequential_image_generation_options?.max_images || null,
           images_generated: response.data.length, // Store count only
@@ -276,24 +295,7 @@ export class SeedreamClient {
     }
   }
 
-  /**
-   * Test API key validity
-   * Makes a minimal generation request to verify the key works
-   */
-  async testApiKey(): Promise<boolean> {
-    try {
-      await this.generate({
-        prompt: 'test',
-        mode: 'text',
-        size: '2K', // Seedream 4.5: '1K' no longer supported
-        quality: 'fast',
-        saveToDatabase: false, // Don't save test generations
-      });
-      return true;
-    } catch (error) {
-      return false;
-    }
-  }
+
 }
 
 /**

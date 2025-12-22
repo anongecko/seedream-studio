@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Code2, Copy, Check, ChevronLeft, ChevronRight } from 'lucide-react';
-import type { GenerationMode, Quality, SeedreamRequest } from '@/types/api';
+import type { GenerationMode, Quality, SeedreamRequest, SeedreamModel } from '@/types/api';
 
 interface ApiPreviewPanelProps {
   mode: GenerationMode;
@@ -13,6 +13,7 @@ interface ApiPreviewPanelProps {
   batchMode: boolean;
   maxImages: number;
   referenceImageUrls?: string[];
+  model: SeedreamModel;
 }
 
 export function ApiPreviewPanel({
@@ -23,14 +24,16 @@ export function ApiPreviewPanel({
   batchMode,
   maxImages,
   referenceImageUrls = [],
+  model,
 }: ApiPreviewPanelProps) {
   const [isOpen, setIsOpen] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
 
-  // Build the API request object for Seedream 4.5
+  // Build the API request object based on selected model
   const apiRequest = React.useMemo(() => {
+    const modelVersion = model === 'seedream-4-0' ? 'seedream-4-0-250828' : 'seedream-4-5-251128';
     const request: Partial<SeedreamRequest> = {
-      model: 'seedream-4-5-251128', // Seedream 4.5
+      model: modelVersion,
       prompt: prompt || '',
       sequential_image_generation: batchMode ? 'auto' : 'disabled',
       response_format: 'b64_json',
@@ -57,14 +60,19 @@ export function ApiPreviewPanel({
       request.size = size.replace('×', 'x'); // Convert display format to API format
     }
 
-    // Seedream 4.5: Use optimize_prompt_options instead of quality parameter
-    // Always include it to show users the new API structure
-    request.optimize_prompt_options = {
-      mode: quality, // Maps to 'standard' | 'fast'
-    };
+    // Model-specific quality parameter handling
+    if (model === 'seedream-4-0') {
+      // Seedream 4.0 uses 'quality' parameter
+      request.quality = quality;
+    } else {
+      // Seedream 4.5 uses 'optimize_prompt_options'
+      request.optimize_prompt_options = {
+        mode: quality,
+      };
+    }
 
     return request;
-  }, [mode, prompt, size, quality, batchMode, maxImages, referenceImageUrls]);
+  }, [mode, prompt, size, quality, batchMode, maxImages, referenceImageUrls, model]);
 
   // Format JSON with custom syntax highlighting
   const formattedJson = React.useMemo(() => {

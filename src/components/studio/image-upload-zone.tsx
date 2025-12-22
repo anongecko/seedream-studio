@@ -3,7 +3,8 @@
 import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Upload, X, Image as ImageIcon, AlertCircle, Check } from 'lucide-react';
-import { PARAMETER_CONSTRAINTS } from '@/constants/parameters';
+import { getModelConstraints } from '@/constants/parameters';
+import type { SeedreamModel } from '@/types/api';
 
 export interface ImageFile {
   file: File;
@@ -20,24 +21,29 @@ interface ImageUploadZoneProps {
   onChange: (images: ImageFile[]) => void;
   maxImages?: number;
   mode?: 'single' | 'multi';
+  model?: SeedreamModel;
 }
 
 export function ImageUploadZone({
   images,
   onChange,
-  maxImages = 14,
+  maxImages,
   mode = 'multi',
+  model = 'seedream-4-5',
 }: ImageUploadZoneProps) {
+  // Use model-specific max images if not provided
+  const defaultMaxImages = getModelConstraints(model).imageUrl.maxCount;
+  const effectiveMaxImages = maxImages ?? defaultMaxImages;
   const [isDragging, setIsDragging] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   // Validate image file
   const validateImageFile = React.useCallback((file: File): { valid: boolean; error?: string } => {
-    const constraints = PARAMETER_CONSTRAINTS.imageUrl;
+    const constraints = getModelConstraints(model).imageUrl;
 
     // Check file size
     if (file.size > constraints.maxSize) {
-      return { valid: false, error: `File too large (max ${constraints.maxSize / 2048 / 2048}MB)` };
+      return { valid: false, error: `File too large (max ${Math.round(constraints.maxSize / 1024 / 1024)}MB)` };
     }
 
     // Check format
@@ -56,7 +62,7 @@ export function ImageUploadZone({
   const processFiles = React.useCallback(
     async (files: FileList | File[]) => {
       const fileArray = Array.from(files);
-      const remainingSlots = maxImages - images.length;
+      const remainingSlots = effectiveMaxImages - images.length;
       const filesToProcess = fileArray.slice(0, remainingSlots);
 
       const newImages: ImageFile[] = await Promise.all(
@@ -123,7 +129,7 @@ export function ImageUploadZone({
   }, []);
 
   const hasImages = images.length > 0;
-  const canAddMore = images.length < maxImages;
+  const canAddMore = images.length < effectiveMaxImages;
 
   return (
     <div className="space-y-4">
@@ -138,7 +144,7 @@ export function ImageUploadZone({
               {mode === 'single' ? 'Reference Image' : 'Reference Images'}
             </h3>
             <p className="text-xs text-muted-foreground">
-              {images.length} of {maxImages} {mode === 'single' ? 'image' : 'images'}
+              {images.length} of {effectiveMaxImages} {mode === 'single' ? 'image' : 'images'}
             </p>
           </div>
         </div>
@@ -195,7 +201,7 @@ export function ImageUploadZone({
             </div>
 
             <p className="text-[10px] text-muted-foreground/50 mt-3">
-              Max 20MB per image • Up to {maxImages} images
+              Max {Math.round(getModelConstraints(model).imageUrl.maxSize / 1024 / 1024)}MB per image • Up to {effectiveMaxImages} images
             </p>
           </div>
 

@@ -3,10 +3,13 @@
 import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Maximize2, Check } from 'lucide-react';
+import type { SeedreamModel } from '@/types/api';
+import { getModelConstraints } from '@/constants/parameters';
 
 interface SizeSelectorProps {
   value: string;
   onChange: (value: string) => void;
+  model: SeedreamModel;
   className?: string;
 }
 
@@ -19,7 +22,8 @@ interface SizeOption {
   category: 'square' | 'landscape' | 'portrait';
 }
 
-const SIZE_OPTIONS: SizeOption[] = [
+// All available size options (will be filtered by model constraints)
+const ALL_SIZE_OPTIONS: SizeOption[] = [
   // Square
   { id: '1:1', label: '1:1', ratio: 'Square', dimensions: '2048×2048', aspectRatio: 1, category: 'square' },
 
@@ -41,10 +45,26 @@ const CATEGORY_LABELS = {
   portrait: 'Portrait',
 };
 
-export function SizeSelector({ value, onChange, className = '' }: SizeSelectorProps) {
+export function SizeSelector({ value, onChange, model, className = '' }: SizeSelectorProps) {
   const [selectedCategory, setSelectedCategory] = React.useState<'square' | 'landscape' | 'portrait'>('square');
 
-  // Find selected option or default to 1:1
+  // Get model constraints
+  const constraints = getModelConstraints(model);
+
+  // Filter size options based on model constraints
+  const SIZE_OPTIONS = React.useMemo(() => {
+    return ALL_SIZE_OPTIONS.filter((option) => {
+      // Parse dimensions
+      const [width, height] = option.dimensions.split('×').map(Number);
+      const totalPixels = width * height;
+
+      // Check if within model limits
+      return totalPixels >= constraints.size.minTotalPixels &&
+             totalPixels <= constraints.size.maxTotalPixels;
+    });
+  }, [model, constraints]);
+
+  // Find selected option or default to first available
   const selectedOption = SIZE_OPTIONS.find((opt) => opt.dimensions === value) || SIZE_OPTIONS[0];
 
   React.useEffect(() => {
@@ -61,7 +81,7 @@ export function SizeSelector({ value, onChange, className = '' }: SizeSelectorPr
 
   const categorizedOptions = React.useMemo(() => {
     return SIZE_OPTIONS.filter((opt) => opt.category === selectedCategory);
-  }, [selectedCategory]);
+  }, [selectedCategory, SIZE_OPTIONS]);
 
   return (
     <div className={className}>

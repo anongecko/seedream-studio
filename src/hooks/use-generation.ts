@@ -2,12 +2,13 @@
 
 import { useState } from 'react';
 import { getSeedreamClient } from '@/lib/seedream-client';
-import type { GenerationMode, Quality, SeedreamResponse, GenerationResult } from '@/types/api';
+import type { GenerationMode, Quality, SeedreamResponse, GenerationResult, SeedreamModel } from '@/types/api';
 
 interface GenerationRequest {
   apiKey: string;
   prompt: string;
   mode: GenerationMode;
+  model: SeedreamModel;
   images?: string[]; // Reference images
   size?: string;
   quality?: Quality;
@@ -31,6 +32,7 @@ export function useGeneration() {
       const response: SeedreamResponse = await client.generate({
         prompt: request.prompt,
         mode: request.mode,
+        model: request.model,
         images: request.images,
         size: request.size,
         quality: request.quality,
@@ -60,6 +62,7 @@ export function useGeneration() {
         images,
         prompt: request.prompt,
         mode: request.mode,
+        model: request.model,
         referenceImageUrls: request.images, // Save reference images used
         parameters: {
           size: request.size || '2048x2048',
@@ -74,7 +77,25 @@ export function useGeneration() {
       setResult(generationResult);
       return generationResult;
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Generation failed';
+      let errorMessage = 'Generation failed';
+
+      if (err instanceof Error) {
+        // Try to provide more specific error messages
+        const message = err.message.toLowerCase();
+
+        if (message.includes('unauthorized') || message.includes('invalid api key') || message.includes('authentication')) {
+          errorMessage = `API key is not valid for ${request.model === 'seedream-4-0' ? 'Seedream 4.0' : 'Seedream 4.5'}. Please check your API key or try switching models.`;
+        } else if (message.includes('content') && message.includes('filter') || message.includes('sensitive') || message.includes('blocked')) {
+          errorMessage = `Content was blocked by safety filters. ${request.model === 'seedream-4-0' ? 'Try Seedream 4.5 for less restrictive content filtering.' : 'This content may be restricted.'}`;
+        } else if (message.includes('quota') || message.includes('limit')) {
+          errorMessage = 'API quota exceeded. Please check your account limits.';
+        } else if (message.includes('timeout') || message.includes('network')) {
+          errorMessage = 'Request timed out. Please try again.';
+        } else {
+          errorMessage = err.message;
+        }
+      }
+
       setError(errorMessage);
       return null;
     } finally {

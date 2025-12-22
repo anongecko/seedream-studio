@@ -4,7 +4,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 
 export const metadata: Metadata = {
   title: "SeaDream Studio - AI Image Generation",
-  description: "Create stunning images with BytePlus Seedream 4.0",
+  description: "Create stunning images with BytePlus Seedream AI",
 };
 
 export default function RootLayout({
