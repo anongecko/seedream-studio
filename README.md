@@ -1,4 +1,4 @@
-## Hellp
+## Hello
 This is a NextJS project I made for personal use to use up the free API credits that you get when signing up at Bytedance for Seedream 4, and recently Seedream 4.5. It's pretty unnecessary, but feel free to join the party if you have an API key and don't want to generate images through your terminal.
 
 ![CleanShot SeaDream Studio - AI Image Generation_12-23-2025@07-31+AM-000795](https://github.com/user-attachments/assets/6820ec9f-4604-449d-902d-7bc0e5a665e4)
