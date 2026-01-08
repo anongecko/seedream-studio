@@ -16,45 +16,45 @@ export type Database = {
     Tables: {
       generations: {
         Row: {
+          batch_mode: boolean
           created_at: string | null
           generation_time_ms: number | null
           id: string
-          image_data: string | null
+          images_generated: number
+          max_images: number | null
           mode: string
           model_version: string | null
-          output_size: string
           prompt: string
           quality: string
           reference_image_urls: string[] | null
-          seed: number
           size: string
         }
         Insert: {
+          batch_mode?: boolean
           created_at?: string | null
           generation_time_ms?: number | null
           id?: string
-          image_data?: string | null
+          images_generated?: number
+          max_images?: number | null
           mode: string
           model_version?: string | null
-          output_size: string
           prompt: string
           quality: string
           reference_image_urls?: string[] | null
-          seed: number
           size: string
         }
         Update: {
+          batch_mode?: boolean
           created_at?: string | null
           generation_time_ms?: number | null
           id?: string
-          image_data?: string | null
+          images_generated?: number
+          max_images?: number | null
           mode?: string
           model_version?: string | null
-          output_size?: string
           prompt?: string
           quality?: string
           reference_image_urls?: string[] | null
-          seed?: number
           size?: string
         }
         Relationships: []
@@ -98,12 +98,101 @@ export type Database = {
         }
         Relationships: []
       }
+      video_generations: {
+        Row: {
+          completion_tokens: number | null
+          created_at: string
+          duration: number
+          framespersecond: number
+          generate_audio: boolean
+          generation_time_ms: number | null
+          id: string
+          last_frame_url: string | null
+          mode: string
+          model_version: string
+          parent_task_id: string | null
+          prompt: string
+          ratio: string
+          reference_image_urls: string[] | null
+          resolution: string
+          return_last_frame: boolean
+          seed: number
+          service_tier: string
+          task_id: string
+          total_tokens: number | null
+          video_url: string | null
+        }
+        Insert: {
+          completion_tokens?: number | null
+          created_at?: string
+          duration: number
+          framespersecond?: number
+          generate_audio?: boolean
+          generation_time_ms?: number | null
+          id?: string
+          last_frame_url?: string | null
+          mode: string
+          model_version?: string
+          parent_task_id?: string | null
+          prompt: string
+          ratio: string
+          reference_image_urls?: string[] | null
+          resolution: string
+          return_last_frame?: boolean
+          seed: number
+          service_tier?: string
+          task_id: string
+          total_tokens?: number | null
+          video_url?: string | null
+        }
+        Update: {
+          completion_tokens?: number | null
+          created_at?: string
+          duration?: number
+          framespersecond?: number
+          generate_audio?: boolean
+          generation_time_ms?: number | null
+          id?: string
+          last_frame_url?: string | null
+          mode?: string
+          model_version?: string
+          parent_task_id?: string | null
+          prompt?: string
+          ratio?: string
+          reference_image_urls?: string[] | null
+          resolution?: string
+          return_last_frame?: boolean
+          seed?: number
+          service_tier?: string
+          task_id?: string
+          total_tokens?: number | null
+          video_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "video_generations_parent_task_id_fkey"
+            columns: ["parent_task_id"]
+            isOneToOne: false
+            referencedRelation: "video_generations"
+            referencedColumns: ["task_id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_video_iteration_chain: {
+        Args: { root_task_id: string }
+        Returns: {
+          created_at: string
+          iteration_depth: number
+          parent_task_id: string
+          prompt: string
+          task_id: string
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never

@@ -3,13 +3,13 @@
 import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AlertCircle, Sparkles } from 'lucide-react';
-import type { GenerationMode, SeedreamModel } from '@/types/api';
+import type { UnifiedMode, SeaDreamModel } from '@/types/api';
 
 interface PromptInputProps {
   value: string;
   onChange: (value: string) => void;
-  mode: GenerationMode;
-  model?: SeedreamModel;
+  mode: UnifiedMode;
+  model?: SeaDreamModel;
   className?: string;
 }
 

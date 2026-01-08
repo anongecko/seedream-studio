@@ -4,11 +4,11 @@ import { Waves, Sparkles } from 'lucide-react';
 import { ThemeToggle } from './theme-toggle';
 import { ModelToggle } from './model-toggle';
 import { motion } from 'framer-motion';
-import type { SeedreamModel } from '@/types/api';
+import type { SeaDreamModel } from '@/types/api';
 
 interface HeaderProps {
-  selectedModel: SeedreamModel;
-  onModelChange: (model: SeedreamModel) => void;
+  selectedModel: SeaDreamModel;
+  onModelChange: (model: SeaDreamModel) => void;
 }
 
 export function Header({ selectedModel, onModelChange }: HeaderProps) {

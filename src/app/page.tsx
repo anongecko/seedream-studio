@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { motion } from 'framer-motion';
 import { Header } from '@/components/layout/header';
-import { ModeTabs } from '@/components/studio/mode-tabs';
+import { ModeTabs, mapModeOnModelSwitch } from '@/components/studio/mode-tabs';
 import { ApiKeySetup } from '@/components/studio/api-key-setup';
 import { LoadingState } from '@/components/studio/loading-snake';
 import { PromptInput } from '@/components/studio/prompt-input';
@@ -15,8 +15,19 @@ import { GenerationOutput } from '@/components/studio/generation-output';
 import { ImageUploadZone, filesToBase64, type ImageFile } from '@/components/studio/image-upload-zone';
 import { useApiKey } from '@/hooks/use-api-key';
 import { useGeneration } from '@/hooks/use-generation';
+import { useVideoGeneration } from '@/hooks/use-video-generation';
 import { useModelSelection } from '@/hooks/use-model';
-import type { GenerationMode, Quality, SeedreamModel } from '@/types/api';
+import type { GenerationMode, Quality, UnifiedMode } from '@/types/api';
+import type { VideoDuration, VideoResolution, VideoRatio, VideoServiceTier, VideoMode, MediaType } from '@/types/video-api';
+import { getMediaType, isVideoModel, isVideoMode } from '@/types/api';
+
+// Video components
+import { VideoSizeSelector } from '@/components/studio/video/video-size-selector';
+import { DurationSelector } from '@/components/studio/video/duration-selector';
+import { AudioToggle } from '@/components/studio/video/audio-toggle';
+import { AdvancedOptions } from '@/components/studio/video/advanced-options';
+import { VideoUploadZone, type VideoImageFile } from '@/components/studio/video/video-upload-zone';
+import { VideoOutput } from '@/components/studio/video/video-output';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -37,7 +48,7 @@ const itemVariants = {
   },
 };
 
-// Size options for stats display
+// Size options for stats display (image)
 const SIZE_OPTIONS = [
   { dimensions: '2048×2048', ratio: 'Square' },
   { dimensions: '2560×1440', ratio: 'Wide' },
@@ -53,63 +64,110 @@ export default function Home() {
   // Use custom hooks
   const { apiKey, setApiKey, hasApiKey } = useApiKey();
   const { selectedModel, setSelectedModel } = useModelSelection();
-  const { generate, isGenerating, error, result, clearResult } = useGeneration();
 
-  // UI state
-  const [mode, setMode] = React.useState<GenerationMode>('text');
+  // Image generation hooks
+  const {
+    generate: generateImage,
+    isGenerating: isGeneratingImage,
+    error: imageError,
+    result: imageResult,
+    clearResult: clearImageResult
+  } = useGeneration();
 
-  // Generation parameters
+  // Video generation hooks
+  const {
+    generate: generateVideo,
+    isGenerating: isGeneratingVideo,
+    taskStatus: videoTaskStatus,
+    progress: videoProgress,
+    error: videoError,
+    result: videoResult,
+    clearResult: clearVideoResult,
+  } = useVideoGeneration();
+
+  // Determine media type from selected model
+  const mediaType: MediaType = getMediaType(selectedModel);
+  const isVideo = isVideoModel(selectedModel);
+
+  // UI state - unified mode that works for both image and video
+  const [mode, setMode] = React.useState<UnifiedMode>('text');
+
+  // Image generation parameters
   const [prompt, setPrompt] = React.useState('');
   const [size, setSize] = React.useState('2048×2048');
   const [quality, setQuality] = React.useState<Quality>('standard');
   const [batchMode, setBatchMode] = React.useState(false);
   const [maxImages, setMaxImages] = React.useState(15);
-  const [referenceImages, setReferenceImages] = React.useState<ImageFile[]>([]); // Uploaded image files
+  const [referenceImages, setReferenceImages] = React.useState<ImageFile[]>([]);
+
+  // Video generation parameters
+  const [videoDuration, setVideoDuration] = React.useState<VideoDuration>(-1); // Auto
+  const [videoResolution, setVideoResolution] = React.useState<VideoResolution>('720p');
+  const [videoRatio, setVideoRatio] = React.useState<VideoRatio>('adaptive');
+  const [audioEnabled, setAudioEnabled] = React.useState(true);
+  const [serviceTier, setServiceTier] = React.useState<VideoServiceTier>('default');
+  const [returnLastFrame, setReturnLastFrame] = React.useState(false);
+  const [videoImages, setVideoImages] = React.useState<VideoImageFile[]>([]);
+  const [videoModelId, setVideoModelId] = React.useState<string | undefined>(undefined); // Optional custom model ID
 
   // Calculate reference image count for batch constraints
   const referenceImageCount = referenceImages.filter(img => img.validation.valid).length;
+  const videoImageCount = videoImages.filter(img => img.validationStatus === 'valid').length;
+
+  // Handle model switch - map mode and clear state
+  React.useEffect(() => {
+    const newMediaType = getMediaType(selectedModel);
+    const newMode = mapModeOnModelSwitch(mode, newMediaType);
+
+    if (newMode !== mode) {
+      setMode(newMode);
+    }
+
+    // Clear results when switching models
+    clearImageResult();
+    clearVideoResult();
+  }, [selectedModel]);
 
   // Clear uploaded images and reset batch settings when switching modes
   React.useEffect(() => {
-    // Cleanup object URLs
-    referenceImages.forEach(img => URL.revokeObjectURL(img.preview));
-    setReferenceImages([]);
-
-    // For multi-batch mode, batch is always enabled
-    if (mode === 'multi-batch') {
-      setBatchMode(true);
-      setMaxImages(3); // Default to 3 for multi-batch
+    if (isVideo) {
+      // Cleanup video image URLs
+      videoImages.forEach(img => URL.revokeObjectURL(img.previewUrl));
+      setVideoImages([]);
     } else {
-      setBatchMode(false);
+      // Cleanup image URLs
+      referenceImages.forEach(img => URL.revokeObjectURL(img.preview));
+      setReferenceImages([]);
+
+      // For multi-batch mode, batch is always enabled
+      if (mode === 'multi-batch') {
+        setBatchMode(true);
+        setMaxImages(3);
+      } else {
+        setBatchMode(false);
+      }
     }
-  }, [mode]);
-
-
+  }, [mode, isVideo]);
 
   // Handle image generation
-  const handleGenerate = async () => {
+  const handleImageGenerate = async () => {
     if (!prompt || !hasApiKey) return;
 
-    // Prepare reference images based on mode
     let images: string[] | undefined;
-
-    // Filter valid images only
     const validImages = referenceImages.filter(img => img.validation.valid);
 
     if (validImages.length > 0) {
-      // Convert Files to base64 strings
       const base64Images = await filesToBase64(validImages.map(img => img.file));
       images = base64Images;
     }
 
-    // Convert size from display format (×) to API format (x)
     const apiSize = size.replace('×', 'x');
 
-    await generate({
+    await generateImage({
       apiKey,
       prompt,
-      mode,
-      model: selectedModel,
+      mode: mode as GenerationMode,
+      model: selectedModel as any,
       images,
       size: apiSize,
       quality,
@@ -117,6 +175,48 @@ export default function Home() {
       maxImages: batchMode ? maxImages : undefined,
     });
   };
+
+  // Handle video generation
+  const handleVideoGenerate = async () => {
+    if (!prompt || !hasApiKey) return;
+
+    // Convert video images to base64
+    const validImages = videoImages.filter(img => img.validationStatus === 'valid');
+    const videoImageInputs = await Promise.all(
+      validImages.map(async (img) => {
+        const reader = new FileReader();
+        return new Promise<{ url: string; role?: any }>((resolve) => {
+          reader.onload = () => {
+            resolve({
+              url: reader.result as string,
+              role: img.role,
+            });
+          };
+          reader.readAsDataURL(img.file);
+        });
+      })
+    );
+
+    await generateVideo({
+      apiKey,
+      prompt,
+      mode: mode as VideoMode,
+      images: videoImageInputs.length > 0 ? videoImageInputs : undefined,
+      duration: videoDuration,
+      resolution: videoResolution,
+      ratio: videoRatio,
+      generateAudio: audioEnabled,
+      serviceTier,
+      returnLastFrame,
+      modelId: videoModelId,
+    });
+  };
+
+  const handleGenerate = isVideo ? handleVideoGenerate : handleImageGenerate;
+  const isGenerating = isVideo ? isGeneratingVideo : isGeneratingImage;
+  const error = isVideo ? videoError : imageError;
+  const result = isVideo ? videoResult : imageResult;
+  const clearResult = isVideo ? clearVideoResult : clearImageResult;
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -131,7 +231,9 @@ export default function Home() {
         batchMode={batchMode}
         maxImages={maxImages}
         referenceImageUrls={
-          referenceImages.filter(img => img.validation.valid).map(() => '[base64 image data]')
+          isVideo
+            ? videoImages.filter(img => img.validationStatus === 'valid').map(() => '[base64 image data]')
+            : referenceImages.filter(img => img.validation.valid).map(() => '[base64 image data]')
         }
         model={selectedModel}
       />
@@ -147,12 +249,12 @@ export default function Home() {
           {/* Hero Section */}
           <motion.div variants={itemVariants} className="text-center space-y-4 py-8">
             <h2 className="text-4xl sm:text-5xl font-bold tracking-tight">
-              Create Amazing Images
+              {isVideo ? 'Create Amazing Videos' : 'Create Amazing Images'}
             </h2>
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              Transform your ideas into stunning visuals with{' '}
-              <span className="bg-gradient-to-r from-ocean-500 to-dream-500 bg-clip-text text-transparent font-semibold">
-                Seedream {selectedModel === 'seedream-4-0' ? '4.0' : '4.5'}
+              Transform your ideas into stunning {isVideo ? 'videos' : 'visuals'} with{' '}
+              <span className={`bg-gradient-to-r ${isVideo ? 'from-green-500 to-teal-500' : 'from-ocean-500 to-dream-500'} bg-clip-text text-transparent font-semibold`}>
+                {isVideo ? 'Seedance 1.5 Pro' : `Seedream ${selectedModel === 'seedream-4-0' ? '4.0' : '4.5'}`}
               </span>
             </p>
           </motion.div>
@@ -163,12 +265,13 @@ export default function Home() {
               apiKey={apiKey}
               onApiKeyChange={setApiKey}
               model={selectedModel}
+              onVideoModelIdChange={setVideoModelId}
             />
           </motion.div>
 
           {/* Mode Tabs */}
           <motion.div variants={itemVariants}>
-            <ModeTabs mode={mode} onModeChange={setMode} />
+            <ModeTabs mode={mode} onModeChange={setMode} mediaType={mediaType} />
           </motion.div>
 
           {/* Content Area - Mode-specific components */}
@@ -184,71 +287,81 @@ export default function Home() {
               transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
             >
               {isGenerating ? (
-                // Loading state with cute snake
                 <LoadingState />
               ) : result ? (
-                // Show generation result
                 <div className="space-y-8">
-                   <GenerationOutput
-                     images={result.images}
-                     generationTimeMs={0}
-                     prompt={result.prompt}
-                     mode={result.mode}
-                     model={result.model}
-                     size={result.parameters.size}
-                     quality={result.parameters.quality}
-                     batchMode={result.parameters.batchMode}
-                     maxImages={result.parameters.maxImages}
-                     referenceImageUrls={result.referenceImageUrls}
-                   />
-
-                  {/* Generate another button */}
-                  <motion.button
-                    onClick={clearResult}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    className="w-full rounded-xl border-2 border-ocean-500/30 bg-gradient-to-r from-ocean-500/10 to-dream-500/10 px-8 py-4 text-base font-semibold hover:border-ocean-500/50 transition-all"
-                  >
-                    Generate Another
-                  </motion.button>
+                  {isVideo && videoResult ? (
+                    <VideoOutput result={videoResult} onGenerateAnother={clearResult} />
+                  ) : imageResult ? (
+                    <>
+                      <GenerationOutput
+                        images={imageResult.images}
+                        generationTimeMs={0}
+                        prompt={imageResult.prompt}
+                        mode={imageResult.mode}
+                        model={imageResult.model}
+                        size={imageResult.parameters.size}
+                        quality={imageResult.parameters.quality}
+                        batchMode={imageResult.parameters.batchMode}
+                        maxImages={imageResult.parameters.maxImages}
+                        referenceImageUrls={imageResult.referenceImageUrls}
+                      />
+                      <motion.button
+                        onClick={clearResult}
+                        whileHover={{ scale: 1.02 }}
+                        whileTap={{ scale: 0.98 }}
+                        className="w-full rounded-xl border-2 border-ocean-500/30 bg-gradient-to-r from-ocean-500/10 to-dream-500/10 px-8 py-4 text-base font-semibold hover:border-ocean-500/50 transition-all"
+                      >
+                        Generate Another
+                      </motion.button>
+                    </>
+                  ) : null}
                 </div>
               ) : (
                 <div className="space-y-8">
-                  {/* Image Upload - Mode-specific */}
-                  {(mode === 'image' || mode === 'multi-image' || mode === 'multi-batch') && (
-                    <ImageUploadZone
-                      images={referenceImages}
-                      onChange={setReferenceImages}
-                      maxImages={mode === 'image' ? 1 : undefined}
-                      mode={mode === 'image' ? 'single' : 'multi'}
-                      model={selectedModel}
-                    />
-                  )}
-
-                  {/* Multi-batch info banner - shown only for multi-batch mode */}
-                  {mode === 'multi-batch' && (
-                    <div className="rounded-xl border border-purple-500/30 bg-gradient-to-br from-purple-500/10 to-purple-500/5 p-4">
-                      <div className="flex items-start gap-3">
-                        <div className="p-2 rounded-lg bg-purple-500/10">
-                          <svg className="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                          </svg>
-                        </div>
-                        <div>
-                          <h4 className="text-sm font-semibold text-purple-600 dark:text-purple-400">Multi-Image to Batch Generation</h4>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            Upload 2-14 reference images, then describe what variations to generate.
-                            The AI will create multiple outputs based on your reference images and prompt.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Batch Mode Toggle - only show for non-multi-batch modes */}
-                  {mode !== 'multi-batch' && (
-                    <BatchModeToggle
+                  {/* Upload zones - conditional based on media type */}
+                  {isVideo && isVideoMode(mode) ? (
+                    <VideoUploadZone
                       mode={mode}
+                      images={videoImages}
+                      onImagesChange={setVideoImages}
+                    />
+                  ) : (
+                    <>
+                      {(mode === 'image' || mode === 'multi-image' || mode === 'multi-batch') && (
+                        <ImageUploadZone
+                          images={referenceImages}
+                          onChange={setReferenceImages}
+                          maxImages={mode === 'image' ? 1 : undefined}
+                          mode={mode === 'image' ? 'single' : 'multi'}
+                          model={selectedModel as any}
+                        />
+                      )}
+
+                      {mode === 'multi-batch' && (
+                        <div className="rounded-xl border border-purple-500/30 bg-gradient-to-br from-purple-500/10 to-purple-500/5 p-4">
+                          <div className="flex items-start gap-3">
+                            <div className="p-2 rounded-lg bg-purple-500/10">
+                              <svg className="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                              </svg>
+                            </div>
+                            <div>
+                              <h4 className="text-sm font-semibold text-purple-600 dark:text-purple-400">Multi-Image to Batch Generation</h4>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                Upload 2-14 reference images, then describe what variations to generate.
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {/* Batch Mode Toggle - only for image generation */}
+                  {!isVideo && mode !== 'multi-batch' && (
+                    <BatchModeToggle
+                      mode={mode as GenerationMode}
                       referenceImageCount={referenceImageCount}
                       batchEnabled={batchMode}
                       maxImages={maxImages}
@@ -257,79 +370,53 @@ export default function Home() {
                     />
                   )}
 
-                  {/* Max Images Slider - shown for multi-batch when images are uploaded */}
-                  {mode === 'multi-batch' && referenceImageCount >= 2 && (
-                    <div className="space-y-4 rounded-xl border border-border bg-card/50 p-6">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500/10 to-purple-500/5">
-                          <svg className="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                          </svg>
-                        </div>
-                        <div>
-                          <h3 className="text-sm font-semibold">Output Images</h3>
-                          <p className="text-xs text-muted-foreground">
-                            How many images to generate
-                          </p>
-                        </div>
-                      </div>
+                  {/* Prompt Input */}
+                  <PromptInput value={prompt} onChange={setPrompt} mode={mode} model={selectedModel} />
 
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <label className="text-sm font-medium">Number of Images</label>
-                          <div className="flex items-center gap-2">
-                            <span className="text-2xl font-bold bg-gradient-to-r from-ocean-500 to-dream-500 bg-clip-text text-transparent">
-                              {maxImages}
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              / {Math.max(1, 15 - referenceImageCount)}
-                            </span>
-                          </div>
-                        </div>
-
-                        <input
-                          type="range"
-                          min="1"
-                          max={Math.max(1, 15 - referenceImageCount)}
-                          value={maxImages}
-                          onChange={(e) => setMaxImages(parseInt(e.target.value, 10))}
-                          className="w-full h-2 rounded-lg cursor-pointer appearance-none"
-                          style={{
-                            background: `linear-gradient(to right, oklch(0.55 0.18 245), oklch(0.75 0.20 185) ${((maxImages - 1) / Math.max(1, 15 - referenceImageCount - 1)) * 100}%, hsl(var(--muted)) ${((maxImages - 1) / Math.max(1, 15 - referenceImageCount - 1)) * 100}%)`,
-                          }}
+                  {/* Parameters - conditional based on media type */}
+                  {isVideo ? (
+                    <div className="space-y-8">
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <VideoSizeSelector
+                          resolution={videoResolution}
+                          ratio={videoRatio}
+                          onResolutionChange={setVideoResolution}
+                          onRatioChange={setVideoRatio}
                         />
-
-                        <p className="text-xs text-muted-foreground">
-                          With {referenceImageCount} reference images, you can generate up to {Math.max(1, 15 - referenceImageCount)} output images
-                          <span className="block mt-1 text-[10px] text-muted-foreground/60">
-                            (Constraint: {referenceImageCount} refs + {maxImages} outputs = {referenceImageCount + maxImages} ≤ 15 total)
-                          </span>
-                        </p>
+                        <DurationSelector value={videoDuration} onChange={setVideoDuration} />
+                      </div>
+                      <AudioToggle enabled={audioEnabled} onChange={setAudioEnabled} />
+                      <AdvancedOptions
+                        serviceTier={serviceTier}
+                        returnLastFrame={returnLastFrame}
+                        onServiceTierChange={setServiceTier}
+                        onReturnLastFrameChange={setReturnLastFrame}
+                      />
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                      <SizeSelector value={size} onChange={setSize} model={selectedModel as any} />
+                      <div className="space-y-8">
+                        <QualityToggle value={quality} onChange={setQuality} />
                       </div>
                     </div>
                   )}
 
-                   {/* Prompt Input */}
-                   <PromptInput value={prompt} onChange={setPrompt} mode={mode} model={selectedModel} />
-
-                  {/* Parameters Grid */}
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    {/* Size Selector */}
-                    <SizeSelector value={size} onChange={setSize} model={selectedModel} />
-
-                    {/* Quality Only */}
-                    <div className="space-y-8">
-                      <QualityToggle value={quality} onChange={setQuality} />
-                    </div>
-                  </div>
-
                   {/* Generate Button */}
                   <div className="pt-4 space-y-3">
                     {(() => {
-                      // Determine if generate is disabled
-                      const needsMoreImages = mode === 'multi-batch' && referenceImageCount < 2;
-                      const needsImages = (mode === 'image' || mode === 'multi-image') && referenceImageCount < (mode === 'image' ? 1 : 2);
-                      const isDisabled = !prompt || !hasApiKey || needsMoreImages || needsImages;
+                      const needsImages = !isVideo && (
+                        (mode === 'multi-batch' && referenceImageCount < 2) ||
+                        ((mode === 'image' || mode === 'multi-image') && referenceImageCount < (mode === 'image' ? 1 : 2))
+                      );
+
+                      const needsVideoImages = isVideo && (
+                        (mode === 'image-to-video-first' && videoImageCount < 1) ||
+                        (mode === 'image-to-video-frames' && videoImageCount < 2) ||
+                        (mode === 'image-to-video-ref' && videoImageCount < 1)
+                      );
+
+                      const isDisabled = !prompt || !hasApiKey || needsImages || needsVideoImages;
 
                       return (
                         <>
@@ -338,18 +425,12 @@ export default function Home() {
                             disabled={isDisabled}
                             whileHover={{ scale: 1.02 }}
                             whileTap={{ scale: 0.98 }}
-                            className="w-full rounded-xl bg-gradient-to-r from-ocean-500 to-dream-500 px-8 py-4 text-base font-semibold text-white shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 relative overflow-hidden group"
+                            className={`w-full rounded-xl bg-gradient-to-r ${isVideo ? 'from-green-500 to-teal-500' : 'from-ocean-500 to-dream-500'} px-8 py-4 text-base font-semibold text-white shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 relative overflow-hidden group`}
                           >
-                            {/* Shine effect on hover */}
                             <div className="absolute inset-0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-
                             <span className="relative flex items-center justify-center gap-2">
                               <span>
-                                {mode === 'multi-batch'
-                                  ? `Generate ${maxImages} Image${maxImages > 1 ? 's' : ''}`
-                                  : batchMode
-                                    ? `Generate ${maxImages} Image${maxImages > 1 ? 's' : ''}`
-                                    : 'Generate Image'}
+                                {isVideo ? 'Generate Video' : mode === 'multi-batch' || batchMode ? `Generate ${maxImages} Image${maxImages > 1 ? 's' : ''}` : 'Generate Image'}
                               </span>
                               {prompt && hasApiKey && !isDisabled && (
                                 <motion.span
@@ -364,7 +445,6 @@ export default function Home() {
                             </span>
                           </motion.button>
 
-                          {/* Error message */}
                           {error && (
                             <motion.div
                               initial={{ opacity: 0, y: -5 }}
@@ -377,7 +457,6 @@ export default function Home() {
                             </motion.div>
                           )}
 
-                          {/* Helper text */}
                           {!error && (
                             <motion.p
                               initial={{ opacity: 0, y: -5 }}
@@ -386,15 +465,11 @@ export default function Home() {
                             >
                               {!hasApiKey
                                 ? 'Enter your API key above to get started'
-                                : needsMoreImages
-                                  ? 'Upload at least 2 reference images for batch generation'
-                                  : needsImages
-                                    ? mode === 'image'
-                                      ? 'Upload a reference image'
-                                      : 'Upload at least 2 reference images'
-                                    : !prompt
-                                      ? 'Write a prompt to begin'
-                                      : null}
+                                : needsImages || needsVideoImages
+                                  ? 'Upload required images for this mode'
+                                  : !prompt
+                                    ? 'Write a prompt to begin'
+                                    : null}
                             </motion.p>
                           )}
                         </>
@@ -406,51 +481,51 @@ export default function Home() {
             </motion.div>
           </motion.div>
 
-          {/* Stats/Info Section - Live parameter display */}
-          <motion.div
-            variants={itemVariants}
-            className="grid grid-cols-1 sm:grid-cols-3 gap-4"
-          >
-            {[
-              {
-                label: 'Quality',
-                value: quality === 'standard' ? 'Standard' : 'Fast',
-                description: quality === 'standard' ? 'Higher quality' : 'Faster generation',
-                gradient: 'from-purple-500/10 to-purple-500/5'
-              },
-              {
-                label: 'Size',
-                value: size,
-                description: SIZE_OPTIONS.find(opt => opt.dimensions === size)?.ratio || 'Custom',
-                gradient: 'from-ocean-500/10 to-ocean-500/5'
-              },
-              {
-                label: 'Mode',
-                value: batchMode ? 'Batch' : 'Single',
-                description: batchMode ? `Up to ${maxImages} images` : 'One image',
-                gradient: 'from-dream-500/10 to-dream-500/5'
-              },
-            ].map((stat, index) => (
-              <motion.div
-                key={stat.label}
-                variants={itemVariants}
-                whileHover={{ scale: 1.03, y: -2 }}
-                transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-                className={`group relative overflow-hidden rounded-xl border border-border bg-gradient-to-br ${stat.gradient} p-5 text-center cursor-default`}
-              >
-                {/* Hover gradient effect */}
-                <div className="absolute inset-0 bg-gradient-to-br from-ocean-500/0 to-dream-500/0 group-hover:from-ocean-500/5 group-hover:to-dream-500/5 transition-all duration-300" />
-
-                <div className="relative">
-                  <div className="text-sm font-medium text-muted-foreground mb-2">{stat.label}</div>
-                  <div className="text-2xl font-bold mb-1 bg-gradient-to-r from-ocean-500 to-dream-500 bg-clip-text text-transparent">
-                    {stat.value}
+          {/* Stats/Info Section */}
+          {!isVideo && (
+            <motion.div
+              variants={itemVariants}
+              className="grid grid-cols-1 sm:grid-cols-3 gap-4"
+            >
+              {[
+                {
+                  label: 'Quality',
+                  value: quality === 'standard' ? 'Standard' : 'Fast',
+                  description: quality === 'standard' ? 'Higher quality' : 'Faster generation',
+                  gradient: 'from-purple-500/10 to-purple-500/5'
+                },
+                {
+                  label: 'Size',
+                  value: size,
+                  description: SIZE_OPTIONS.find(opt => opt.dimensions === size)?.ratio || 'Custom',
+                  gradient: 'from-ocean-500/10 to-ocean-500/5'
+                },
+                {
+                  label: 'Mode',
+                  value: batchMode ? 'Batch' : 'Single',
+                  description: batchMode ? `Up to ${maxImages} images` : 'One image',
+                  gradient: 'from-dream-500/10 to-dream-500/5'
+                },
+              ].map((stat) => (
+                <motion.div
+                  key={stat.label}
+                  variants={itemVariants}
+                  whileHover={{ scale: 1.03, y: -2 }}
+                  transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+                  className={`group relative overflow-hidden rounded-xl border border-border bg-gradient-to-br ${stat.gradient} p-5 text-center cursor-default`}
+                >
+                  <div className="absolute inset-0 bg-gradient-to-br from-ocean-500/0 to-dream-500/0 group-hover:from-ocean-500/5 group-hover:to-dream-500/5 transition-all duration-300" />
+                  <div className="relative">
+                    <div className="text-sm font-medium text-muted-foreground mb-2">{stat.label}</div>
+                    <div className="text-2xl font-bold mb-1 bg-gradient-to-r from-ocean-500 to-dream-500 bg-clip-text text-transparent">
+                      {stat.value}
+                    </div>
+                    <div className="text-xs text-muted-foreground/80">{stat.description}</div>
                   </div>
-                  <div className="text-xs text-muted-foreground/80">{stat.description}</div>
-                </div>
-              </motion.div>
-            ))}
-          </motion.div>
+                </motion.div>
+              ))}
+            </motion.div>
+          )}
         </motion.div>
       </main>
 
@@ -463,7 +538,6 @@ export default function Home() {
       >
         <div className="container px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col items-center gap-6">
-            {/* Main footer content */}
             <div className="flex flex-col sm:flex-row items-center justify-between w-full gap-4 text-sm text-muted-foreground">
               <p className="flex items-center gap-2">
                 Powered by{' '}
@@ -471,11 +545,11 @@ export default function Home() {
                   href="https://www.byteplus.com/en/product/seedream-ai"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-ocean-500 hover:text-dream-500 font-medium transition-colors"
+                  className={`inline-flex items-center gap-1 ${isVideo ? 'text-green-500 hover:text-teal-500' : 'text-ocean-500 hover:text-dream-500'} font-medium transition-colors`}
                   whileHover={{ scale: 1.05 }}
                   transition={{ type: 'spring', stiffness: 400, damping: 25 }}
                 >
-                   BytePlus Seedream {selectedModel === 'seedream-4-0' ? '4.0' : '4.5'}
+                  {isVideo ? 'BytePlus Seedance 1.5 Pro' : `BytePlus Seedream ${selectedModel === 'seedream-4-0' ? '4.0' : '4.5'}`}
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                   </svg>
@@ -500,7 +574,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Version and status */}
             <div className="flex items-center gap-3 text-xs text-muted-foreground/60">
               <span>v1.0.0</span>
               <span>•</span>

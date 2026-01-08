@@ -3,17 +3,17 @@
 import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Code2, Copy, Check, ChevronLeft, ChevronRight } from 'lucide-react';
-import type { GenerationMode, Quality, SeedreamRequest, SeedreamModel } from '@/types/api';
+import type { UnifiedMode, Quality, SeedreamRequest, SeaDreamModel } from '@/types/api';
 
 interface ApiPreviewPanelProps {
-  mode: GenerationMode;
+  mode: UnifiedMode;
   prompt: string;
   size: string;
   quality: Quality;
   batchMode: boolean;
   maxImages: number;
   referenceImageUrls?: string[];
-  model: SeedreamModel;
+  model: SeaDreamModel;
 }
 
 export function ApiPreviewPanel({

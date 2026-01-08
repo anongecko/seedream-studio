@@ -1,10 +1,48 @@
 import type { GenerationMode, Quality } from '@/lib/supabase/types';
+import type { VideoMode, MediaType } from './video-api';
 
 export type { GenerationMode, Quality };
 
 // Model selection
-export type SeedreamModel = 'seedream-4-0' | 'seedream-4-5';
-export type ModelVersion = 'seedream-4-0-250828' | 'seedream-4-5-251128';
+export type SeedreamModel = 'seedream-4-0' | 'seedream-4-5'; // Image models only
+export type SeaDreamModel = SeedreamModel | 'seedance-1-5-pro'; // All models (image + video)
+export type ModelVersion = 'seedream-4-0-250828' | 'seedream-4-5-251128' | 'seedance-1-5-pro';
+
+// Unified mode type (combines image and video modes)
+export type UnifiedMode = GenerationMode | VideoMode;
+
+/**
+ * Helper function to determine media type from model
+ */
+export function getMediaType(model: SeaDreamModel): MediaType {
+  return model.startsWith('seedance') ? 'video' : 'image';
+}
+
+/**
+ * Type guard to check if model is a video model
+ */
+export function isVideoModel(model: SeaDreamModel): model is 'seedance-1-5-pro' {
+  return model === 'seedance-1-5-pro';
+}
+
+/**
+ * Type guard to check if model is an image model
+ */
+export function isImageModel(model: SeaDreamModel): model is SeedreamModel {
+  return model === 'seedream-4-0' || model === 'seedream-4-5';
+}
+
+/**
+ * Type guard to check if a UnifiedMode is a video mode
+ */
+export function isVideoMode(mode: UnifiedMode): mode is VideoMode {
+  return [
+    'text-to-video',
+    'image-to-video-first',
+    'image-to-video-frames',
+    'image-to-video-ref',
+  ].includes(mode);
+}
 
 // Size presets (model-specific)
 export type SizePreset4 = '1K' | '2K' | '4K'; // Seedream 4.0

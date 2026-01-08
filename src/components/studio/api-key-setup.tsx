@@ -4,12 +4,13 @@ import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Key, CheckCircle, AlertCircle, Eye, EyeOff } from 'lucide-react';
 
-import type { SeedreamModel } from '@/types/api';
+import type { SeaDreamModel } from '@/types/api';
 
 interface ApiKeySetupProps {
   apiKey: string; // Passed from parent for controlled component
   onApiKeyChange: (key: string) => void; // Callback to parent
-  model?: SeedreamModel;
+  model?: SeaDreamModel;
+  onVideoModelIdChange?: (modelId: string) => void; // Optional callback for custom video model ID
   className?: string;
 }
 
@@ -40,11 +41,13 @@ export function ApiKeySetup({
   apiKey,
   onApiKeyChange,
   model = 'seedream-4-5',
+  onVideoModelIdChange,
   className = ''
 }: ApiKeySetupProps) {
   const [localKey, setLocalKey] = React.useState(apiKey);
   const [isVisible, setIsVisible] = React.useState(false);
   const [isFocused, setIsFocused] = React.useState(false);
+  const [localVideoModelId, setLocalVideoModelId] = React.useState(''); // Custom video model ID
 
   // Sync local state with prop when it changes (e.g., loaded from localStorage)
   React.useEffect(() => {
@@ -177,6 +180,34 @@ export function ApiKeySetup({
                       </motion.p>
                     )}
                   </AnimatePresence>
+
+                  {/* Optional: Custom video model ID */}
+                  {model === 'seedance-1-5-pro' && (
+                    <div className="space-y-1.5 pt-3 border-t border-border/50 mt-3">
+                      <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016-6 0 3 3 0 01-6 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.518 7.163 9.336 9.153 11.514l-.322-.092-.504-.215-.666-.442l-.092-.21v-6.586a3 3 0 01-.367-.295c-.204-.3-.545-.407-.872-.544C7.28 2.778 6.267 2.628 5.07 2.815c-.846.338-1.737.467-2.616.557-.967.15-1.9.328-2.815.557-.75.22-1.534.417-2.31.587-.58.24-.815.557-1.22.962-.767.397-1.534.604-2.31.755-.45.33-.92.604-1.375.953-.26.735.45-1.44.95-2.185.567-.38.17-.77.42-1.17.614-.775.25-1.55.417-2.35.625-.384.29-.745.6-1.15.7-.832.16-1.686.435-2.55.58-.267.335-.63.573-1.01.768-1.377.405-.83.77-1.672.925-2.556.567-.285.762-.487 1.17-.615l3.05 3.05a1 1 0 001.41 0 016.971v2.753c0 1.823-.737 3.31-2.068 4.386l-3.05-3.05a1 1 0 00-.296-.716 0-1.705V14.95z" />
+                        </svg>
+                        Optional: Custom Video Model ID
+                      </label>
+                      <input
+                        type="text"
+                        value={localVideoModelId}
+                        onChange={(e) => {
+                          setLocalVideoModelId(e.target.value);
+                          onVideoModelIdChange?.(e.target.value);
+                        }}
+                        placeholder="seedance-1-5-pro (default)"
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-xs font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ocean-500 focus-visible:ring-offset-2 transition-all placeholder:text-muted-foreground/50"
+                        autoComplete="off"
+                        spellCheck={false}
+                      />
+                      <p className="text-[11px] text-muted-foreground/70">
+                        Only change this if you get a "model does not exist" error. Your model ID may differ (e.g., seedance-1-5-pro-251215).
+                      </p>
+                    </div>
+                  )}
 
                   <p className="text-xs text-muted-foreground">
                     Your API key is stored locally and never sent anywhere except BytePlus servers
