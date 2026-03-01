@@ -38,25 +38,31 @@ export function ImageUploadZone({
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   // Validate image file
-  const validateImageFile = React.useCallback((file: File): { valid: boolean; error?: string } => {
-    const constraints = getModelConstraints(model).imageUrl;
+  const validateImageFile = React.useCallback(
+    (file: File): { valid: boolean; error?: string } => {
+      const constraints = getModelConstraints(model).imageUrl;
 
-    // Check file size
-    if (file.size > constraints.maxSize) {
-      return { valid: false, error: `File too large (max ${Math.round(constraints.maxSize / 1024 / 1024)}MB)` };
-    }
+      // Check file size
+      if (file.size > constraints.maxSize) {
+        return {
+          valid: false,
+          error: `File too large (max ${Math.round(constraints.maxSize / 1024 / 1024)}MB)`,
+        };
+      }
 
-    // Check format
-    const ext = file.name.toLowerCase().split('.').pop();
-    if (!ext || !constraints.formats.includes(ext as any)) {
-      return {
-        valid: false,
-        error: `Invalid format (supported: ${constraints.formats.join(', ')})`,
-      };
-    }
+      // Check format
+      const ext = file.name.toLowerCase().split('.').pop();
+      if (!ext || !constraints.formats.includes(ext as any)) {
+        return {
+          valid: false,
+          error: `Invalid format (supported: ${constraints.formats.join(', ')})`,
+        };
+      }
 
-    return { valid: true };
-  }, []);
+      return { valid: true };
+    },
+    [model]
+  );
 
   // Process files
   const processFiles = React.useCallback(
@@ -81,7 +87,7 @@ export function ImageUploadZone({
 
       onChange([...images, ...newImages]);
     },
-    [images, maxImages, onChange, validateImageFile]
+    [images, effectiveMaxImages, onChange, validateImageFile]
   );
 
   // Handle file input change
@@ -192,16 +198,22 @@ export function ImageUploadZone({
             <p className="text-xs text-muted-foreground mb-3">Drag & drop or click to browse</p>
 
             <div className="flex flex-wrap justify-center gap-2 text-[10px] text-muted-foreground/70">
-              <span className="px-2 py-1 rounded bg-muted">JPG</span>
-              <span className="px-2 py-1 rounded bg-muted">PNG</span>
-              <span className="px-2 py-1 rounded bg-muted">WEBP</span>
-              <span className="px-2 py-1 rounded bg-muted">GIF</span>
-              <span className="px-2 py-1 rounded bg-muted">BMP</span>
-              <span className="px-2 py-1 rounded bg-muted">TIFF</span>
+              {[
+                ...new Set(
+                  getModelConstraints(model).imageUrl.formats.map((f) =>
+                    f.toUpperCase().replace('JPEG', 'JPG')
+                  )
+                ),
+              ].map((fmt) => (
+                <span key={fmt} className="px-2 py-1 rounded bg-muted">
+                  {fmt}
+                </span>
+              ))}
             </div>
 
             <p className="text-[10px] text-muted-foreground/50 mt-3">
-              Max {Math.round(getModelConstraints(model).imageUrl.maxSize / 1024 / 1024)}MB per image • Up to {effectiveMaxImages} images
+              Max {Math.round(getModelConstraints(model).imageUrl.maxSize / 1024 / 1024)}MB per
+              image • Up to {effectiveMaxImages} images
             </p>
           </div>
 
@@ -209,7 +221,9 @@ export function ImageUploadZone({
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/jpeg,image/jpg,image/png,image/webp,image/gif,image/bmp,image/tiff"
+            accept={getModelConstraints(model)
+              .imageUrl.formats.map((f) => `image/${f}`)
+              .join(',')}
             multiple={mode === 'multi'}
             onChange={handleFileInput}
             className="hidden"

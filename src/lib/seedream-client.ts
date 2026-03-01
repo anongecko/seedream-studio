@@ -9,6 +9,7 @@ import type {
   SeedreamModel,
 } from '@/types/api';
 import { getModelDefaults, getModelConstraints } from '@/constants/parameters';
+import { getModelById, getModelByWireId, buildQualityParam, extractQualityFromRequest } from '@/lib/model-registry';
 
 /**
  * Seedream API client with Supabase integration
@@ -54,7 +55,8 @@ export class SeedreamClient {
     this.validateRequest(request);
 
     try {
-      // Make API call through Next.js API route to avoid CORS issues
+      // Call through Next.js API route (uses node:https with TCP keepalive
+      // to handle long-running batch generations without connection drops)
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: {
@@ -64,14 +66,18 @@ export class SeedreamClient {
           apiKey: this.apiKey,
           ...request,
         }),
-        signal: AbortSignal.timeout(120000), // 2 minute timeout
+        signal: AbortSignal.timeout(900_000), // 15 minute timeout for large batch generations
       });
 
       if (!response.ok) {
-        const errorData: SeedreamError = await response.json();
-        throw new Error(
-          errorData.error?.message || `HTTP ${response.status}: Generation failed`
-        );
+        let errorMessage = `HTTP ${response.status}: Generation failed`;
+        try {
+          const errorData: SeedreamError = await response.json();
+          errorMessage = errorData.error?.message || errorMessage;
+        } catch {
+          // Response body wasn't valid JSON, use status-based message
+        }
+        throw new Error(errorMessage);
       }
 
       const result: SeedreamResponse = await response.json();
@@ -116,10 +122,10 @@ export class SeedreamClient {
     }
 
     const defaults = getModelDefaults(params.model);
-    const modelVersion = params.model === 'seedream-4-0' ? 'seedream-4-0-250828' : 'seedream-4-5-251128';
+    const modelEntry = getModelById(params.model);
 
     const request: SeedreamRequest = {
-      model: modelVersion,
+      model: modelEntry.wireModelId as SeedreamRequest['model'],
       prompt: params.prompt,
       image: imageInput,
       size: params.size || defaults.size,
@@ -129,16 +135,8 @@ export class SeedreamClient {
       watermark: defaults.watermark,
     };
 
-    // Model-specific quality parameter handling
-    if (params.model === 'seedream-4-0') {
-      // Seedream 4.0 uses 'quality' parameter
-      request.quality = params.quality || defaults.quality;
-    } else {
-      // Seedream 4.5 uses 'optimize_prompt_options'
-      request.optimize_prompt_options = {
-        mode: params.quality || defaults.quality,
-      };
-    }
+    // Model-specific quality parameter handling via registry
+    Object.assign(request, buildQualityParam(params.model, params.quality || defaults.quality));
 
     // Add batch options if batch mode enabled
     if (params.batchMode && params.maxImages) {
@@ -155,7 +153,7 @@ export class SeedreamClient {
    */
   private validateRequest(request: SeedreamRequest): void {
     // Determine model from request
-    const model: SeedreamModel = request.model === 'seedream-4-0-250828' ? 'seedream-4-0' : 'seedream-4-5';
+    const model: SeedreamModel = getModelByWireId(request.model).id as SeedreamModel;
     const constraints = getModelConstraints(model);
 
     // Validate prompt
@@ -274,9 +272,7 @@ export class SeedreamClient {
           mode,
           reference_image_urls: images.length > 0 ? images : null,
           size: request.size,
-          quality: model === 'seedream-4-0'
-            ? (request.quality as Quality)
-            : (request.optimize_prompt_options?.mode as Quality),
+          quality: extractQualityFromRequest(model, request as unknown as Record<string, unknown>),
           batch_mode: request.sequential_image_generation === 'auto',
           max_images: request.sequential_image_generation_options?.max_images || null,
           images_generated: response.data.length, // Store count only

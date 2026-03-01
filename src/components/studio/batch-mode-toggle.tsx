@@ -40,13 +40,17 @@ export function BatchModeToggle({
   onBatchEnabledChange,
   onMaxImagesChange,
 }: BatchModeToggleProps) {
+  const isMultiBatch = mode === 'multi-batch';
+
   // Calculate constraint
   const maxLimit = calculateMaxImagesLimit(mode, referenceImageCount);
 
   // Adjust maxImages if it exceeds new limit
-  if (batchEnabled && maxImages > maxLimit) {
+  if ((batchEnabled || isMultiBatch) && maxImages > maxLimit) {
     onMaxImagesChange(maxLimit);
   }
+
+  const showSlider = batchEnabled || isMultiBatch;
 
   return (
     <div className="space-y-4 rounded-xl border border-border bg-card/50 p-6">
@@ -59,31 +63,35 @@ export function BatchModeToggle({
           <div>
             <h3 className="text-sm font-semibold">Batch Generation</h3>
             <p className="text-xs text-muted-foreground">
-              Generate multiple related images at once
+              {isMultiBatch
+                ? 'Choose how many images to generate'
+                : 'Generate multiple related images at once'}
             </p>
           </div>
         </div>
 
-        {/* Toggle switch */}
-        <button
-          type="button"
-          onClick={() => onBatchEnabledChange(!batchEnabled)}
-          className={`
-            relative inline-flex h-6 w-11 items-center rounded-full transition-colors
-            ${batchEnabled ? 'bg-gradient-to-r from-ocean-500 to-dream-500' : 'bg-muted'}
-          `}
-        >
-          <motion.span
-            layout
-            className="inline-block h-4 w-4 transform rounded-full bg-white shadow-lg"
-            animate={{ x: batchEnabled ? 24 : 4 }}
-            transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-          />
-        </button>
+        {/* Toggle switch - hidden for multi-batch (always enabled) */}
+        {!isMultiBatch && (
+          <button
+            type="button"
+            onClick={() => onBatchEnabledChange(!batchEnabled)}
+            className={`
+              relative inline-flex h-6 w-11 items-center rounded-full transition-colors
+              ${batchEnabled ? 'bg-gradient-to-r from-ocean-500 to-dream-500' : 'bg-muted'}
+            `}
+          >
+            <motion.span
+              layout
+              className="inline-block h-4 w-4 transform rounded-full bg-white shadow-lg"
+              animate={{ x: batchEnabled ? 24 : 4 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+            />
+          </button>
+        )}
       </div>
 
-      {/* Max images slider - shown when batch enabled */}
-      {batchEnabled && (
+      {/* Max images slider - shown when batch enabled or in multi-batch mode */}
+      {showSlider && (
         <motion.div
           initial={{ opacity: 0, height: 0 }}
           animate={{ opacity: 1, height: 'auto' }}

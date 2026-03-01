@@ -1,14 +1,35 @@
 'use client';
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { Download, Copy, Clock, ImageIcon, ChevronLeft, ChevronRight, Grid3X3, Layers, Images } from 'lucide-react';
+import {
+  Download,
+  Copy,
+  Clock,
+  ImageIcon,
+  ChevronLeft,
+  ChevronRight,
+  Grid3X3,
+  Layers,
+  Images,
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useEmblaCarousel from 'embla-carousel-react';
-import { cn, downloadBase64Image, copyImageToClipboard, formatFileSize, formatGenerationTime, estimateBase64Size } from '@/lib/utils';
+import {
+  cn,
+  downloadBase64Image,
+  downloadImageFromUrl,
+  copyImageToClipboard,
+  copyImageFromUrl,
+  formatFileSize,
+  formatGenerationTime,
+  estimateBase64Size,
+} from '@/lib/utils';
+import { getModelById, buildQualityParam } from '@/lib/model-registry';
 
 interface GenerationOutputProps {
   images: Array<{
-    base64: string;
+    base64?: string;
+    url?: string;
     size: string;
   }>;
   generationTimeMs?: number;
@@ -53,6 +74,15 @@ export function GenerationOutput({
 
   const isBatch = images.length > 1;
 
+  // Get displayable src for an image (handles both base64 and URL)
+  const getImageSrc = (image: { base64?: string; url?: string }) => {
+    if (image.url) return image.url;
+    if (!image.base64) return '';
+    return image.base64.startsWith('data:')
+      ? image.base64
+      : `data:image/png;base64,${image.base64}`;
+  };
+
   // Embla carousel for slideshow
   const [emblaRef, emblaApi] = useEmblaCarousel({
     loop: false,
@@ -61,49 +91,71 @@ export function GenerationOutput({
 
   // Handle image load
   const handleImageLoad = useCallback((index: number) => {
-    setLoadedImages(prev => new Set([...prev, index]));
+    setLoadedImages((prev) => new Set([...prev, index]));
   }, []);
 
-  // Handle download
-  const handleDownload = useCallback((index: number) => {
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-    const filename = isBatch
-      ? `seedream-${timestamp}-${index + 1}.png`
-      : `seedream-${timestamp}.png`;
-    downloadBase64Image(images[index].base64, filename);
-  }, [images, isBatch]);
+  // Handle download (supports both base64 and URL images)
+  const handleDownload = useCallback(
+    async (index: number) => {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+      const filename = isBatch
+        ? `seedream-${timestamp}-${index + 1}.png`
+        : `seedream-${timestamp}.png`;
+      const image = images[index];
+      if (image.url) {
+        await downloadImageFromUrl(image.url, filename);
+      } else if (image.base64) {
+        downloadBase64Image(image.base64, filename);
+      }
+    },
+    [images, isBatch]
+  );
 
   // Handle download all (for batch)
   const handleDownloadAll = useCallback(async () => {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-    // Download each image with a small delay to avoid overwhelming the browser
     for (let i = 0; i < images.length; i++) {
       const filename = `seedream-${timestamp}-${i + 1}.png`;
-      downloadBase64Image(images[i].base64, filename);
-      // Small delay between downloads
-      await new Promise(resolve => setTimeout(resolve, 200));
+      const image = images[i];
+      if (image.url) {
+        await downloadImageFromUrl(image.url, filename);
+      } else if (image.base64) {
+        downloadBase64Image(image.base64, filename);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200));
     }
   }, [images]);
 
-  // Handle copy
-  const handleCopy = useCallback(async (index: number) => {
-    setCopyingIndex(index);
-    setCopiedIndex(null);
+  // Handle copy (supports both base64 and URL images)
+  const handleCopy = useCallback(
+    async (index: number) => {
+      setCopyingIndex(index);
+      setCopiedIndex(null);
 
-    try {
-      await copyImageToClipboard(images[index].base64);
-      setCopiedIndex(index);
-      setTimeout(() => setCopiedIndex(null), 2000);
-    } catch (error) {
-      console.error('Failed to copy image:', error);
-    } finally {
-      setCopyingIndex(null);
-    }
-  }, [images]);
+      try {
+        const image = images[index];
+        if (image.url) {
+          await copyImageFromUrl(image.url);
+        } else if (image.base64) {
+          await copyImageToClipboard(image.base64);
+        }
+        setCopiedIndex(index);
+        setTimeout(() => setCopiedIndex(null), 2000);
+      } catch (error) {
+        console.error('Failed to copy image:', error);
+      } finally {
+        setCopyingIndex(null);
+      }
+    },
+    [images]
+  );
 
   // Total estimated size
   const totalEstimatedSize = useMemo(() => {
-    return images.reduce((sum, img) => sum + estimateBase64Size(img.base64), 0);
+    return images.reduce(
+      (sum, img) => (img.base64 ? sum + estimateBase64Size(img.base64) : sum),
+      0
+    );
   }, [images]);
 
   // Sync embla with selected index
@@ -134,8 +186,10 @@ export function GenerationOutput({
   const curlCommand = useMemo(() => {
     if (!prompt) return '';
 
-    const apiUrl = process.env.NEXT_PUBLIC_SEEDREAM_API_URL || 'https://ark.ap-southeast.bytepluses.com/api/v3';
-    const modelVersion = model === 'seedream-4-0' ? 'seedream-4-0-250828' : 'seedream-4-5-251128';
+    const apiUrl =
+      process.env.NEXT_PUBLIC_SEEDREAM_API_URL || 'https://ark.ap-southeast.bytepluses.com/api/v3';
+    const modelEntry = model ? getModelById(model) : null;
+    const modelVersion = modelEntry?.wireModelId || 'seedream-4-5-251128';
     const requestBody: any = {
       model: modelVersion,
       prompt,
@@ -149,25 +203,21 @@ export function GenerationOutput({
       requestBody.sequential_image_generation_options = { max_images: maxImages };
     }
 
-    // Model-specific quality parameter
-    if (model === 'seedream-4-0') {
-      requestBody.quality = quality;
-    } else {
-      requestBody.optimize_prompt_options = {
-        mode: quality,
-      };
+    // Model-specific quality parameter via registry
+    if (model && quality) {
+      Object.assign(requestBody, buildQualityParam(model, quality as any));
     }
 
     if (referenceImageUrls && referenceImageUrls.length > 0) {
-      requestBody.image = referenceImageUrls.length === 1 ? referenceImageUrls[0] : referenceImageUrls;
+      requestBody.image =
+        referenceImageUrls.length === 1 ? referenceImageUrls[0] : referenceImageUrls;
     }
 
     if (size && size !== '2048x2048') requestBody.size = size;
-    if (quality && quality !== 'standard') requestBody.quality = quality;
 
     const jsonBody = JSON.stringify(requestBody, null, 2);
     return `curl -X POST ${apiUrl}/images/generations \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer $SEEDREAM_API_KEY" \\\n  -d '${jsonBody}'`;
-  }, [prompt, size, quality, batchMode, maxImages, referenceImageUrls]);
+  }, [prompt, model, size, quality, batchMode, maxImages, referenceImageUrls]);
 
   const handleCopyCurl = useCallback(async () => {
     try {
@@ -265,9 +315,7 @@ export function GenerationOutput({
                   <div className="flex">
                     {images.map((image, index) => {
                       const isLoaded = loadedImages.has(index);
-                      const imageDataUri = image.base64.startsWith('data:')
-                        ? image.base64
-                        : `data:image/png;base64,${image.base64}`;
+                      const imageDataUri = getImageSrc(image);
 
                       return (
                         <div key={index} className="flex-[0_0_100%] min-w-0">
@@ -327,9 +375,7 @@ export function GenerationOutput({
               {/* Thumbnail strip */}
               <div className="grid grid-cols-5 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-12 gap-2">
                 {images.map((image, index) => {
-                  const imageDataUri = image.base64.startsWith('data:')
-                    ? image.base64
-                    : `data:image/png;base64,${image.base64}`;
+                  const imageDataUri = getImageSrc(image);
 
                   return (
                     <button
@@ -369,7 +415,8 @@ export function GenerationOutput({
                     className={cn(
                       'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm',
                       'border border-input hover:bg-accent transition-colors',
-                      copiedIndex === selectedIndex && 'bg-green-500/10 text-green-600 border-green-500/50'
+                      copiedIndex === selectedIndex &&
+                        'bg-green-500/10 text-green-600 border-green-500/50'
                     )}
                   >
                     <Copy className="h-3.5 w-3.5" />
@@ -396,9 +443,7 @@ export function GenerationOutput({
             >
               {images.map((image, index) => {
                 const isLoaded = loadedImages.has(index);
-                const imageDataUri = image.base64.startsWith('data:')
-                  ? image.base64
-                  : `data:image/png;base64,${image.base64}`;
+                const imageDataUri = getImageSrc(image);
 
                 return (
                   <motion.div
@@ -455,9 +500,7 @@ export function GenerationOutput({
                     </div>
 
                     {/* Size label */}
-                    <p className="mt-2 text-xs text-muted-foreground text-center">
-                      {image.size}
-                    </p>
+                    <p className="mt-2 text-xs text-muted-foreground text-center">{image.size}</p>
                   </motion.div>
                 );
               })}
@@ -470,9 +513,7 @@ export function GenerationOutput({
           {(() => {
             const image = images[0];
             const isLoaded = loadedImages.has(0);
-            const imageDataUri = image.base64.startsWith('data:')
-              ? image.base64
-              : `data:image/png;base64,${image.base64}`;
+            const imageDataUri = getImageSrc(image);
 
             const match = image.size.match(/^(\d+)x(\d+)$/);
             const width = match ? parseInt(match[1], 10) : 0;
@@ -534,27 +575,29 @@ export function GenerationOutput({
       {/* Global metadata and actions */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-t pt-4">
         <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-           <div className="flex items-center gap-1.5">
-             <ImageIcon className="h-4 w-4" />
-             <span>{images.length} image{images.length > 1 ? 's' : ''}</span>
-           </div>
-           <div className="flex items-center gap-1.5">
-             <span>{formatFileSize(totalEstimatedSize)}</span>
-           </div>
-           {model && (
-             <div className="flex items-center gap-1.5">
-               <span className="px-2 py-0.5 rounded-full bg-gradient-to-r from-blue-500/10 to-purple-500/10 text-blue-600 dark:text-blue-400 text-xs font-medium border border-blue-500/20">
-                 {model === 'seedream-4-0' ? '4.0 Uncensored' : '4.5 Censored'}
-               </span>
-             </div>
-           )}
-           {generationTimeMs !== undefined && (
-             <div className="flex items-center gap-1.5">
-               <Clock className="h-4 w-4" />
-               <span>{formatGenerationTime(generationTimeMs)}</span>
-             </div>
-           )}
-         </div>
+          <div className="flex items-center gap-1.5">
+            <ImageIcon className="h-4 w-4" />
+            <span>
+              {images.length} image{images.length > 1 ? 's' : ''}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span>{formatFileSize(totalEstimatedSize)}</span>
+          </div>
+          {model && (
+            <div className="flex items-center gap-1.5">
+              <span className="px-2 py-0.5 rounded-full bg-gradient-to-r from-blue-500/10 to-purple-500/10 text-blue-600 dark:text-blue-400 text-xs font-medium border border-blue-500/20">
+                {getModelById(model).displayLabel}
+              </span>
+            </div>
+          )}
+          {generationTimeMs !== undefined && (
+            <div className="flex items-center gap-1.5">
+              <Clock className="h-4 w-4" />
+              <span>{formatGenerationTime(generationTimeMs)}</span>
+            </div>
+          )}
+        </div>
 
         <div className="flex flex-wrap gap-2">
           <button
@@ -568,7 +611,12 @@ export function GenerationOutput({
             )}
           >
             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+              />
             </svg>
             {curlCopied ? 'Copied!' : 'Copy cURL'}
           </button>
@@ -587,11 +635,23 @@ export function GenerationOutput({
       {/* Warning */}
       <div className="rounded-md border border-amber-500/20 bg-amber-500/10 p-3">
         <div className="flex items-start gap-2">
-          <svg className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          <svg
+            className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+            />
           </svg>
           <p className="text-xs text-amber-800 dark:text-amber-200">
-            <span className="font-semibold">Backup your work:</span> Download your {isBatch ? 'images' : 'image'} or copy the cURL command to recreate {isBatch ? 'them' : 'it'} later. Images are not stored in the database.
+            <span className="font-semibold">Backup your work:</span> Download your{' '}
+            {isBatch ? 'images' : 'image'} or copy the cURL command to recreate{' '}
+            {isBatch ? 'them' : 'it'} later. Images are not stored in the database.
           </p>
         </div>
       </div>

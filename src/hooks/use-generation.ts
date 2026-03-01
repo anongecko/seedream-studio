@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { getSeedreamClient } from '@/lib/seedream-client';
 import type { GenerationMode, Quality, SeedreamResponse, GenerationResult, SeedreamModel } from '@/types/api';
+import { getModelById } from '@/lib/model-registry';
 
 interface GenerationRequest {
   apiKey: string;
@@ -29,6 +30,9 @@ export function useGeneration() {
     try {
       const client = getSeedreamClient(request.apiKey);
 
+      // Use URL format for batch to avoid massive base64 payloads through the proxy
+      const useBatchUrls = request.batchMode && (request.maxImages ?? 1) > 1;
+
       const response: SeedreamResponse = await client.generate({
         prompt: request.prompt,
         mode: request.mode,
@@ -38,7 +42,7 @@ export function useGeneration() {
         quality: request.quality,
         batchMode: request.batchMode,
         maxImages: request.maxImages,
-        responseFormat: 'b64_json', // Use base64 for immediate display
+        responseFormat: useBatchUrls ? 'url' : 'b64_json',
         saveToDatabase: true,
       });
 
@@ -48,13 +52,17 @@ export function useGeneration() {
       }
 
       const images = response.data.map(img => {
-        if (!img.b64_json) {
-          throw new Error('Missing image data in response');
+        if (useBatchUrls) {
+          if (!img.url) {
+            throw new Error('Missing image URL in batch response');
+          }
+          return { url: img.url, size: img.size };
+        } else {
+          if (!img.b64_json) {
+            throw new Error('Missing image data in response');
+          }
+          return { base64: img.b64_json, size: img.size };
         }
-        return {
-          base64: img.b64_json,
-          size: img.size,
-        };
       });
 
       const generationResult: GenerationResult = {
@@ -63,14 +71,14 @@ export function useGeneration() {
         prompt: request.prompt,
         mode: request.mode,
         model: request.model,
-        referenceImageUrls: request.images, // Save reference images used
+        referenceImageUrls: request.images,
         parameters: {
           size: request.size || '2048x2048',
           quality: request.quality || 'standard',
           batchMode: request.batchMode || false,
           maxImages: request.maxImages,
         },
-        generationTimeMs: 0, // TODO: Track actual generation time
+        generationTimeMs: 0,
         timestamp: new Date(),
       };
 
@@ -83,10 +91,13 @@ export function useGeneration() {
         // Try to provide more specific error messages
         const message = err.message.toLowerCase();
 
+        const modelEntry = getModelById(request.model);
         if (message.includes('unauthorized') || message.includes('invalid api key') || message.includes('authentication')) {
-          errorMessage = `API key is not valid for ${request.model === 'seedream-4-0' ? 'Seedream 4.0' : 'Seedream 4.5'}. Please check your API key or try switching models.`;
+          errorMessage = `API key is not valid for Seedream ${modelEntry.displayName}. Please check your API key or try switching models.`;
         } else if (message.includes('content') && message.includes('filter') || message.includes('sensitive') || message.includes('blocked')) {
-          errorMessage = `Content was blocked by safety filters. ${request.model === 'seedream-4-0' ? 'Try Seedream 4.5 for less restrictive content filtering.' : 'This content may be restricted.'}`;
+          errorMessage = modelEntry.isCensored
+            ? `Content was blocked by safety filters. Try Seedream 4.0 for less restrictive content filtering.`
+            : `Content was blocked by safety filters. This content may be restricted.`;
         } else if (message.includes('quota') || message.includes('limit')) {
           errorMessage = 'API quota exceeded. Please check your account limits.';
         } else if (message.includes('timeout') || message.includes('network')) {

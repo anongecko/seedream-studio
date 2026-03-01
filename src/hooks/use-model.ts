@@ -4,11 +4,12 @@ import { useState, useEffect } from 'react';
 import type { SeaDreamModel, SeedreamModel } from '@/types/api';
 import type { MediaType } from '@/types/video-api';
 import { getMediaType, isImageModel } from '@/types/api';
+import { isValidModelId, getDefaultModel, getDefaultImageModel, getModelById } from '@/lib/model-registry';
 
 const MODEL_STORAGE_KEY = 'seedream:model';
 const PREVIOUS_IMAGE_MODEL_KEY = 'seedream:previousImageModel';
-const DEFAULT_MODEL: SeaDreamModel = 'seedream-4-5'; // Default to 4.5 (censored)
-const DEFAULT_IMAGE_MODEL: SeedreamModel = 'seedream-4-5';
+const DEFAULT_MODEL: SeaDreamModel = getDefaultModel().id as SeaDreamModel;
+const DEFAULT_IMAGE_MODEL: SeedreamModel = getDefaultImageModel().id as SeedreamModel;
 
 export function useModelSelection() {
   const [selectedModel, setSelectedModel] = useState<SeaDreamModel>(DEFAULT_MODEL);
@@ -20,13 +21,13 @@ export function useModelSelection() {
     const storedPrevImage = localStorage.getItem(PREVIOUS_IMAGE_MODEL_KEY);
 
     // Validate and set selected model
-    if (stored === 'seedream-4-0' || stored === 'seedream-4-5' || stored === 'seedance-1-5-pro') {
-      setSelectedModel(stored);
+    if (stored && isValidModelId(stored)) {
+      setSelectedModel(stored as SeaDreamModel);
     }
 
     // Validate and set previous image model
-    if (storedPrevImage === 'seedream-4-0' || storedPrevImage === 'seedream-4-5') {
-      setPreviousImageModel(storedPrevImage);
+    if (storedPrevImage && isValidModelId(storedPrevImage) && getModelById(storedPrevImage).mediaType === 'image') {
+      setPreviousImageModel(storedPrevImage as SeedreamModel);
     }
   }, []);
 

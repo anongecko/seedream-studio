@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Key, CheckCircle, AlertCircle, Eye, EyeOff } from 'lucide-react';
 
 import type { SeaDreamModel } from '@/types/api';
+import { getModelById } from '@/lib/model-registry';
 
 interface ApiKeySetupProps {
   apiKey: string; // Passed from parent for controlled component
@@ -103,7 +104,7 @@ export function ApiKeySetup({
                 <div>
                   <h3 className="text-lg font-semibold mb-1">Enter your API Key</h3>
                   <p className="text-sm text-muted-foreground">
-                    Get your BytePlus Seedream {model === 'seedream-4-0' ? '4.0' : '4.5'} API key from{' '}
+                    Get your BytePlus Seedream {getModelById(model).displayName} API key from{' '}
                     <a
                       href="https://console.byteplus.com"
                       target="_blank"
@@ -182,7 +183,7 @@ export function ApiKeySetup({
                   </AnimatePresence>
 
                   {/* Optional: Custom video model ID */}
-                  {model === 'seedance-1-5-pro' && (
+                  {getModelById(model).supportsCustomModelId && (
                     <div className="space-y-1.5 pt-3 border-t border-border/50 mt-3">
                       <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

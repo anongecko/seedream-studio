@@ -12,14 +12,26 @@ import { QualityToggle } from '@/components/studio/quality-toggle';
 import { BatchModeToggle } from '@/components/studio/batch-mode-toggle';
 import { ApiPreviewPanel } from '@/components/studio/api-preview-panel';
 import { GenerationOutput } from '@/components/studio/generation-output';
-import { ImageUploadZone, filesToBase64, type ImageFile } from '@/components/studio/image-upload-zone';
+import {
+  ImageUploadZone,
+  filesToBase64,
+  type ImageFile,
+} from '@/components/studio/image-upload-zone';
 import { useApiKey } from '@/hooks/use-api-key';
 import { useGeneration } from '@/hooks/use-generation';
 import { useVideoGeneration } from '@/hooks/use-video-generation';
 import { useModelSelection } from '@/hooks/use-model';
-import type { GenerationMode, Quality, UnifiedMode } from '@/types/api';
-import type { VideoDuration, VideoResolution, VideoRatio, VideoServiceTier, VideoMode, MediaType } from '@/types/video-api';
+import type { GenerationMode, Quality, UnifiedMode, SeedreamModel } from '@/types/api';
+import type {
+  VideoDuration,
+  VideoResolution,
+  VideoRatio,
+  VideoServiceTier,
+  VideoMode,
+  MediaType,
+} from '@/types/video-api';
 import { getMediaType, isVideoModel, isVideoMode } from '@/types/api';
+import { getModelById, getAvailableTiers, getDimensionsForTier } from '@/lib/model-registry';
 
 // Video components
 import { VideoSizeSelector } from '@/components/studio/video/video-size-selector';
@@ -48,17 +60,7 @@ const itemVariants = {
   },
 };
 
-// Size options for stats display (image)
-const SIZE_OPTIONS = [
-  { dimensions: '2048×2048', ratio: 'Square' },
-  { dimensions: '2560×1440', ratio: 'Wide' },
-  { dimensions: '2304×1728', ratio: 'Landscape' },
-  { dimensions: '2496×1664', ratio: 'Classic' },
-  { dimensions: '3024×1296', ratio: 'Ultrawide' },
-  { dimensions: '1440×2560', ratio: 'Tall' },
-  { dimensions: '1728×2304', ratio: 'Portrait' },
-  { dimensions: '1664×2496', ratio: 'Photo' },
-];
+// SIZE_OPTIONS is computed per-model below using useMemo
 
 export default function Home() {
   // Use custom hooks
@@ -71,7 +73,7 @@ export default function Home() {
     isGenerating: isGeneratingImage,
     error: imageError,
     result: imageResult,
-    clearResult: clearImageResult
+    clearResult: clearImageResult,
   } = useGeneration();
 
   // Video generation hooks
@@ -88,6 +90,23 @@ export default function Home() {
   // Determine media type from selected model
   const mediaType: MediaType = getMediaType(selectedModel);
   const isVideo = isVideoModel(selectedModel);
+  const imageModel = selectedModel as SeedreamModel;
+
+  // Aggregate all tier dimensions for current model (for stats display ratio lookup)
+  const SIZE_OPTIONS = React.useMemo(() => {
+    const tiers = getAvailableTiers(selectedModel);
+    const seen = new Set<string>();
+    const options: { dimensions: string; ratio: string }[] = [];
+    for (const tier of tiers) {
+      for (const d of getDimensionsForTier(selectedModel, tier)) {
+        if (!seen.has(d.displayDimensions)) {
+          seen.add(d.displayDimensions);
+          options.push({ dimensions: d.displayDimensions, ratio: d.ratio });
+        }
+      }
+    }
+    return options;
+  }, [selectedModel]);
 
   // UI state - unified mode that works for both image and video
   const [mode, setMode] = React.useState<UnifiedMode>('text');
@@ -111,8 +130,8 @@ export default function Home() {
   const [videoModelId, setVideoModelId] = React.useState<string | undefined>(undefined); // Optional custom model ID
 
   // Calculate reference image count for batch constraints
-  const referenceImageCount = referenceImages.filter(img => img.validation.valid).length;
-  const videoImageCount = videoImages.filter(img => img.validationStatus === 'valid').length;
+  const referenceImageCount = referenceImages.filter((img) => img.validation.valid).length;
+  const videoImageCount = videoImages.filter((img) => img.validationStatus === 'valid').length;
 
   // Handle model switch - map mode and clear state
   React.useEffect(() => {
@@ -132,11 +151,11 @@ export default function Home() {
   React.useEffect(() => {
     if (isVideo) {
       // Cleanup video image URLs
-      videoImages.forEach(img => URL.revokeObjectURL(img.previewUrl));
+      videoImages.forEach((img) => URL.revokeObjectURL(img.previewUrl));
       setVideoImages([]);
     } else {
       // Cleanup image URLs
-      referenceImages.forEach(img => URL.revokeObjectURL(img.preview));
+      referenceImages.forEach((img) => URL.revokeObjectURL(img.preview));
       setReferenceImages([]);
 
       // For multi-batch mode, batch is always enabled
@@ -154,10 +173,10 @@ export default function Home() {
     if (!prompt || !hasApiKey) return;
 
     let images: string[] | undefined;
-    const validImages = referenceImages.filter(img => img.validation.valid);
+    const validImages = referenceImages.filter((img) => img.validation.valid);
 
     if (validImages.length > 0) {
-      const base64Images = await filesToBase64(validImages.map(img => img.file));
+      const base64Images = await filesToBase64(validImages.map((img) => img.file));
       images = base64Images;
     }
 
@@ -167,7 +186,7 @@ export default function Home() {
       apiKey,
       prompt,
       mode: mode as GenerationMode,
-      model: selectedModel as any,
+      model: imageModel,
       images,
       size: apiSize,
       quality,
@@ -181,7 +200,7 @@ export default function Home() {
     if (!prompt || !hasApiKey) return;
 
     // Convert video images to base64
-    const validImages = videoImages.filter(img => img.validationStatus === 'valid');
+    const validImages = videoImages.filter((img) => img.validationStatus === 'valid');
     const videoImageInputs = await Promise.all(
       validImages.map(async (img) => {
         const reader = new FileReader();
@@ -232,8 +251,10 @@ export default function Home() {
         maxImages={maxImages}
         referenceImageUrls={
           isVideo
-            ? videoImages.filter(img => img.validationStatus === 'valid').map(() => '[base64 image data]')
-            : referenceImages.filter(img => img.validation.valid).map(() => '[base64 image data]')
+            ? videoImages
+                .filter((img) => img.validationStatus === 'valid')
+                .map(() => '[base64 image data]')
+            : referenceImages.filter((img) => img.validation.valid).map(() => '[base64 image data]')
         }
         model={selectedModel}
       />
@@ -253,8 +274,12 @@ export default function Home() {
             </h2>
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
               Transform your ideas into stunning {isVideo ? 'videos' : 'visuals'} with{' '}
-              <span className={`bg-gradient-to-r ${isVideo ? 'from-green-500 to-teal-500' : 'from-ocean-500 to-dream-500'} bg-clip-text text-transparent font-semibold`}>
-                {isVideo ? 'Seedance 1.5 Pro' : `Seedream ${selectedModel === 'seedream-4-0' ? '4.0' : '4.5'}`}
+              <span
+                className={`bg-gradient-to-r ${isVideo ? 'from-green-500 to-teal-500' : 'from-ocean-500 to-dream-500'} bg-clip-text text-transparent font-semibold`}
+              >
+                {isVideo
+                  ? 'Seedance 1.5 Pro'
+                  : `Seedream ${getModelById(selectedModel).displayName}`}
               </span>
             </p>
           </motion.div>
@@ -334,7 +359,7 @@ export default function Home() {
                           onChange={setReferenceImages}
                           maxImages={mode === 'image' ? 1 : undefined}
                           mode={mode === 'image' ? 'single' : 'multi'}
-                          model={selectedModel as any}
+                          model={imageModel}
                         />
                       )}
 
@@ -342,14 +367,27 @@ export default function Home() {
                         <div className="rounded-xl border border-purple-500/30 bg-gradient-to-br from-purple-500/10 to-purple-500/5 p-4">
                           <div className="flex items-start gap-3">
                             <div className="p-2 rounded-lg bg-purple-500/10">
-                              <svg className="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                              <svg
+                                className="w-5 h-5 text-purple-500"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M13 10V3L4 14h7v7l9-11h-7z"
+                                />
                               </svg>
                             </div>
                             <div>
-                              <h4 className="text-sm font-semibold text-purple-600 dark:text-purple-400">Multi-Image to Batch Generation</h4>
+                              <h4 className="text-sm font-semibold text-purple-600 dark:text-purple-400">
+                                Multi-Image to Batch Generation
+                              </h4>
                               <p className="text-xs text-muted-foreground mt-1">
-                                Upload 2-14 reference images, then describe what variations to generate.
+                                Upload 2-14 reference images, then describe what variations to
+                                generate.
                               </p>
                             </div>
                           </div>
@@ -359,7 +397,7 @@ export default function Home() {
                   )}
 
                   {/* Batch Mode Toggle - only for image generation */}
-                  {!isVideo && mode !== 'multi-batch' && (
+                  {!isVideo && (
                     <BatchModeToggle
                       mode={mode as GenerationMode}
                       referenceImageCount={referenceImageCount}
@@ -371,7 +409,12 @@ export default function Home() {
                   )}
 
                   {/* Prompt Input */}
-                  <PromptInput value={prompt} onChange={setPrompt} mode={mode} model={selectedModel} />
+                  <PromptInput
+                    value={prompt}
+                    onChange={setPrompt}
+                    mode={mode}
+                    model={selectedModel}
+                  />
 
                   {/* Parameters - conditional based on media type */}
                   {isVideo ? (
@@ -395,7 +438,7 @@ export default function Home() {
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                      <SizeSelector value={size} onChange={setSize} model={selectedModel as any} />
+                      <SizeSelector value={size} onChange={setSize} model={imageModel} />
                       <div className="space-y-8">
                         <QualityToggle value={quality} onChange={setQuality} />
                       </div>
@@ -405,16 +448,17 @@ export default function Home() {
                   {/* Generate Button */}
                   <div className="pt-4 space-y-3">
                     {(() => {
-                      const needsImages = !isVideo && (
-                        (mode === 'multi-batch' && referenceImageCount < 2) ||
-                        ((mode === 'image' || mode === 'multi-image') && referenceImageCount < (mode === 'image' ? 1 : 2))
-                      );
+                      const needsImages =
+                        !isVideo &&
+                        ((mode === 'multi-batch' && referenceImageCount < 2) ||
+                          ((mode === 'image' || mode === 'multi-image') &&
+                            referenceImageCount < (mode === 'image' ? 1 : 2)));
 
-                      const needsVideoImages = isVideo && (
-                        (mode === 'image-to-video-first' && videoImageCount < 1) ||
-                        (mode === 'image-to-video-frames' && videoImageCount < 2) ||
-                        (mode === 'image-to-video-ref' && videoImageCount < 1)
-                      );
+                      const needsVideoImages =
+                        isVideo &&
+                        ((mode === 'image-to-video-first' && videoImageCount < 1) ||
+                          (mode === 'image-to-video-frames' && videoImageCount < 2) ||
+                          (mode === 'image-to-video-ref' && videoImageCount < 1));
 
                       const isDisabled = !prompt || !hasApiKey || needsImages || needsVideoImages;
 
@@ -430,7 +474,11 @@ export default function Home() {
                             <div className="absolute inset-0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000 bg-gradient-to-r from-transparent via-white/20 to-transparent" />
                             <span className="relative flex items-center justify-center gap-2">
                               <span>
-                                {isVideo ? 'Generate Video' : mode === 'multi-batch' || batchMode ? `Generate ${maxImages} Image${maxImages > 1 ? 's' : ''}` : 'Generate Image'}
+                                {isVideo
+                                  ? 'Generate Video'
+                                  : mode === 'multi-batch' || batchMode
+                                    ? `Generate ${maxImages} Image${maxImages > 1 ? 's' : ''}`
+                                    : 'Generate Image'}
                               </span>
                               {prompt && hasApiKey && !isDisabled && (
                                 <motion.span
@@ -483,28 +531,26 @@ export default function Home() {
 
           {/* Stats/Info Section */}
           {!isVideo && (
-            <motion.div
-              variants={itemVariants}
-              className="grid grid-cols-1 sm:grid-cols-3 gap-4"
-            >
+            <motion.div variants={itemVariants} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {[
                 {
                   label: 'Quality',
                   value: quality === 'standard' ? 'Standard' : 'Fast',
                   description: quality === 'standard' ? 'Higher quality' : 'Faster generation',
-                  gradient: 'from-purple-500/10 to-purple-500/5'
+                  gradient: 'from-purple-500/10 to-purple-500/5',
                 },
                 {
                   label: 'Size',
                   value: size,
-                  description: SIZE_OPTIONS.find(opt => opt.dimensions === size)?.ratio || 'Custom',
-                  gradient: 'from-ocean-500/10 to-ocean-500/5'
+                  description:
+                    SIZE_OPTIONS.find((opt) => opt.dimensions === size)?.ratio || 'Custom',
+                  gradient: 'from-ocean-500/10 to-ocean-500/5',
                 },
                 {
                   label: 'Mode',
                   value: batchMode ? 'Batch' : 'Single',
                   description: batchMode ? `Up to ${maxImages} images` : 'One image',
-                  gradient: 'from-dream-500/10 to-dream-500/5'
+                  gradient: 'from-dream-500/10 to-dream-500/5',
                 },
               ].map((stat) => (
                 <motion.div
@@ -516,7 +562,9 @@ export default function Home() {
                 >
                   <div className="absolute inset-0 bg-gradient-to-br from-ocean-500/0 to-dream-500/0 group-hover:from-ocean-500/5 group-hover:to-dream-500/5 transition-all duration-300" />
                   <div className="relative">
-                    <div className="text-sm font-medium text-muted-foreground mb-2">{stat.label}</div>
+                    <div className="text-sm font-medium text-muted-foreground mb-2">
+                      {stat.label}
+                    </div>
                     <div className="text-2xl font-bold mb-1 bg-gradient-to-r from-ocean-500 to-dream-500 bg-clip-text text-transparent">
                       {stat.value}
                     </div>
@@ -549,9 +597,16 @@ export default function Home() {
                   whileHover={{ scale: 1.05 }}
                   transition={{ type: 'spring', stiffness: 400, damping: 25 }}
                 >
-                  {isVideo ? 'BytePlus Seedance 1.5 Pro' : `BytePlus Seedream ${selectedModel === 'seedream-4-0' ? '4.0' : '4.5'}`}
+                  {isVideo
+                    ? 'BytePlus Seedance 1.5 Pro'
+                    : `BytePlus Seedream ${getModelById(selectedModel).displayName}`}
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+                    />
                   </svg>
                 </motion.a>
               </p>

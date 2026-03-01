@@ -49,6 +49,64 @@ export function downloadBase64Image(base64: string, filename: string): void {
 }
 
 /**
+ * Download image from a URL
+ * Fetches the image and triggers a download
+ */
+export async function downloadImageFromUrl(imageUrl: string, filename: string): Promise<void> {
+  const response = await fetch(imageUrl);
+  const blob = await response.blob();
+  const blobUrl = URL.createObjectURL(blob);
+
+  const link = document.createElement('a');
+  link.href = blobUrl;
+  link.download = filename;
+  link.style.display = 'none';
+
+  document.body.appendChild(link);
+  link.click();
+
+  document.body.removeChild(link);
+  URL.revokeObjectURL(blobUrl);
+}
+
+/**
+ * Copy image from URL to clipboard
+ */
+export async function copyImageFromUrl(imageUrl: string): Promise<void> {
+  const response = await fetch(imageUrl);
+  const blob = await response.blob();
+  const pngBlob = blob.type === 'image/png'
+    ? blob
+    : await convertBlobToPng(blob);
+  await navigator.clipboard.write([
+    new ClipboardItem({ [pngBlob.type]: pngBlob }),
+  ]);
+}
+
+/**
+ * Convert an image blob to PNG via canvas (clipboard requires PNG)
+ */
+function convertBlobToPng(blob: Blob): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { reject(new Error('No canvas context')); return; }
+      ctx.drawImage(img, 0, 0);
+      canvas.toBlob(
+        (pngBlob) => pngBlob ? resolve(pngBlob) : reject(new Error('toBlob failed')),
+        'image/png'
+      );
+    };
+    img.onerror = () => reject(new Error('Failed to load image'));
+    img.src = URL.createObjectURL(blob);
+  });
+}
+
+/**
  * Copy image to clipboard
  * Works with base64 data
  */

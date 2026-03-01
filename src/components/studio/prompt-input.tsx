@@ -4,6 +4,7 @@ import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AlertCircle, Sparkles } from 'lucide-react';
 import type { UnifiedMode, SeaDreamModel } from '@/types/api';
+import { getModelById } from '@/lib/model-registry';
 
 interface PromptInputProps {
   value: string;
@@ -212,7 +213,7 @@ export function PromptInput({ value, onChange, mode, model = 'seedream-4-5', cla
           className="text-xs text-muted-foreground/80 flex items-center gap-1.5"
         >
           <span className="inline-block w-1 h-1 rounded-full bg-muted-foreground/40" />
-          Seedream {model === 'seedream-4-0' ? '4.0' : '4.5'} works best with prompts under 600 words
+          Seedream {getModelById(model).displayName} works best with prompts under 600 words
         </motion.p>
       </div>
     </div>

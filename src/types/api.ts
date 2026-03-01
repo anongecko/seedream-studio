@@ -1,12 +1,23 @@
 import type { GenerationMode, Quality } from '@/lib/supabase/types';
 import type { VideoMode, MediaType } from './video-api';
+import {
+  type ModelId,
+  type ImageModelId,
+  type WireModelId,
+  type MediaType as RegistryMediaType,
+  getModelById,
+  isValidModelId,
+} from '@/lib/model-registry';
 
 export type { GenerationMode, Quality };
 
-// Model selection
-export type SeedreamModel = 'seedream-4-0' | 'seedream-4-5'; // Image models only
-export type SeaDreamModel = SeedreamModel | 'seedance-1-5-pro'; // All models (image + video)
-export type ModelVersion = 'seedream-4-0-250828' | 'seedream-4-5-251128' | 'seedance-1-5-pro';
+// Model selection — aliases backed by registry types
+export type SeedreamModel = ImageModelId; // Image models only
+export type SeaDreamModel = ModelId; // All models (image + video)
+export type ModelVersion = WireModelId;
+
+// Re-export for convenience
+export type { ModelId, ImageModelId, WireModelId };
 
 // Unified mode type (combines image and video modes)
 export type UnifiedMode = GenerationMode | VideoMode;
@@ -15,21 +26,21 @@ export type UnifiedMode = GenerationMode | VideoMode;
  * Helper function to determine media type from model
  */
 export function getMediaType(model: SeaDreamModel): MediaType {
-  return model.startsWith('seedance') ? 'video' : 'image';
+  return getModelById(model).mediaType as MediaType;
 }
 
 /**
  * Type guard to check if model is a video model
  */
 export function isVideoModel(model: SeaDreamModel): model is 'seedance-1-5-pro' {
-  return model === 'seedance-1-5-pro';
+  return getModelById(model).mediaType === 'video';
 }
 
 /**
  * Type guard to check if model is an image model
  */
 export function isImageModel(model: SeaDreamModel): model is SeedreamModel {
-  return model === 'seedream-4-0' || model === 'seedream-4-5';
+  return getModelById(model).mediaType === 'image';
 }
 
 /**
@@ -44,10 +55,10 @@ export function isVideoMode(mode: UnifiedMode): mode is VideoMode {
   ].includes(mode);
 }
 
-// Size presets (model-specific)
-export type SizePreset4 = '1K' | '2K' | '4K'; // Seedream 4.0
-export type SizePreset45 = '2K' | '4K'; // Seedream 4.5 (no 1K)
-export type SizePreset = SizePreset4 | SizePreset45;
+/**
+ * Validate a model ID string
+ */
+export { isValidModelId };
 
 export type ResponseFormat = 'url' | 'b64_json';
 
@@ -70,7 +81,7 @@ export interface SeedreamRequest {
   model: ModelVersion;
   prompt: string;
   image?: string | string[]; // undefined for text-to-image, string for image-to-image, array for multi-image
-  size?: SizePreset | string; // Constraints vary by model
+  size?: string; // Constraints vary by model
   // Model-specific parameters
   quality?: QualityMode; // Seedream 4.0 only
   optimize_prompt_options?: {
@@ -117,8 +128,9 @@ export interface SeedreamImageData {
  */
 export interface GenerationResult {
   id: string;
-  images: Array<{ // Changed from single imageBase64 to array
-    base64: string;
+  images: Array<{
+    base64?: string; // Base64 data (single image / small batches)
+    url?: string; // CDN URL (large batch generations)
     size: string; // e.g., "1760x2368"
   }>;
   prompt: string;

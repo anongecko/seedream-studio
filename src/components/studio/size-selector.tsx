@@ -4,7 +4,7 @@ import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Maximize2, Check } from 'lucide-react';
 import type { SeedreamModel } from '@/types/api';
-import { getModelConstraints } from '@/constants/parameters';
+import { getAvailableTiers, getDimensionsForTier, type SizeDimensionEntry } from '@/lib/model-registry';
 
 interface SizeSelectorProps {
   value: string;
@@ -12,32 +12,6 @@ interface SizeSelectorProps {
   model: SeedreamModel;
   className?: string;
 }
-
-interface SizeOption {
-  id: string;
-  label: string;
-  ratio: string;
-  dimensions: string;
-  aspectRatio: number; // For visual representation
-  category: 'square' | 'landscape' | 'portrait';
-}
-
-// All available size options (will be filtered by model constraints)
-const ALL_SIZE_OPTIONS: SizeOption[] = [
-  // Square
-  { id: '1:1', label: '1:1', ratio: 'Square', dimensions: '2048×2048', aspectRatio: 1, category: 'square' },
-
-  // Landscape
-  { id: '16:9', label: '16:9', ratio: 'Wide', dimensions: '2560×1440', aspectRatio: 16 / 9, category: 'landscape' },
-  { id: '4:3', label: '4:3', ratio: 'Landscape', dimensions: '2304×1728', aspectRatio: 4 / 3, category: 'landscape' },
-  { id: '3:2', label: '3:2', ratio: 'Classic', dimensions: '2496×1664', aspectRatio: 3 / 2, category: 'landscape' },
-  { id: '21:9', label: '21:9', ratio: 'Ultrawide', dimensions: '3024×1296', aspectRatio: 21 / 9, category: 'landscape' },
-
-  // Portrait
-  { id: '9:16', label: '9:16', ratio: 'Tall', dimensions: '1440×2560', aspectRatio: 9 / 16, category: 'portrait' },
-  { id: '3:4', label: '3:4', ratio: 'Portrait', dimensions: '1728×2304', aspectRatio: 3 / 4, category: 'portrait' },
-  { id: '2:3', label: '2:3', ratio: 'Photo', dimensions: '1664×2496', aspectRatio: 2 / 3, category: 'portrait' },
-];
 
 const CATEGORY_LABELS = {
   square: 'Square',
@@ -47,41 +21,61 @@ const CATEGORY_LABELS = {
 
 export function SizeSelector({ value, onChange, model, className = '' }: SizeSelectorProps) {
   const [selectedCategory, setSelectedCategory] = React.useState<'square' | 'landscape' | 'portrait'>('square');
+  const [resolutionTier, setResolutionTier] = React.useState('2K');
 
-  // Get model constraints
-  const constraints = getModelConstraints(model);
+  // Get available tiers from registry
+  const availableTiers = React.useMemo(() => getAvailableTiers(model), [model]);
 
-  // Filter size options based on model constraints
-  const SIZE_OPTIONS = React.useMemo(() => {
-    return ALL_SIZE_OPTIONS.filter((option) => {
-      // Parse dimensions
-      const [width, height] = option.dimensions.split('×').map(Number);
-      const totalPixels = width * height;
+  // Get dimensions for current tier
+  const tierDimensions = React.useMemo(
+    () => getDimensionsForTier(model, resolutionTier),
+    [model, resolutionTier],
+  );
 
-      // Check if within model limits
-      return totalPixels >= constraints.size.minTotalPixels &&
-             totalPixels <= constraints.size.maxTotalPixels;
-    });
-  }, [model, constraints]);
-
-  // Find selected option or default to first available
-  const selectedOption = SIZE_OPTIONS.find((opt) => opt.dimensions === value) || SIZE_OPTIONS[0];
-
+  // Auto-snap tier when model changes (e.g., 4.0 on 1K → switch to 4.5 → snap to 2K)
   React.useEffect(() => {
-    // Update category when value changes
+    if (!availableTiers.includes(resolutionTier)) {
+      const newTier = availableTiers.includes('2K') ? '2K' : availableTiers[0];
+      setResolutionTier(newTier);
+    }
+  }, [availableTiers, resolutionTier]);
+
+  // Find the currently selected option from tier dimensions
+  const selectedOption = React.useMemo(() => {
+    // value uses display format with × (e.g., "2048×2048"), dimensions use x
+    const apiValue = value.replace('×', 'x');
+    return tierDimensions.find((d) => d.dimensions === apiValue) || tierDimensions[0];
+  }, [value, tierDimensions]);
+
+  // Update category when value changes externally
+  React.useEffect(() => {
     if (selectedOption) {
       setSelectedCategory(selectedOption.category);
     }
   }, [selectedOption]);
 
-  const handleSelect = (option: SizeOption) => {
-    onChange(option.dimensions);
+  // When tier changes, find matching aspect ratio in new tier and update value
+  const handleTierChange = React.useCallback(
+    (tier: string) => {
+      setResolutionTier(tier);
+      const newDimensions = getDimensionsForTier(model, tier);
+      // Try to keep same aspect ratio
+      const currentLabel = selectedOption?.label;
+      const match = newDimensions.find((d) => d.label === currentLabel);
+      const fallback = newDimensions[0];
+      onChange((match || fallback).displayDimensions);
+    },
+    [model, selectedOption, onChange],
+  );
+
+  const handleSelect = (option: SizeDimensionEntry) => {
+    onChange(option.displayDimensions);
     setSelectedCategory(option.category);
   };
 
   const categorizedOptions = React.useMemo(() => {
-    return SIZE_OPTIONS.filter((opt) => opt.category === selectedCategory);
-  }, [selectedCategory, SIZE_OPTIONS]);
+    return tierDimensions.filter((opt) => opt.category === selectedCategory);
+  }, [selectedCategory, tierDimensions]);
 
   return (
     <div className={className}>
@@ -93,9 +87,31 @@ export function SizeSelector({ value, onChange, model, className = '' }: SizeSel
             Output Size
           </label>
           <div className="text-sm">
-            <span className="font-mono text-ocean-500">{selectedOption.dimensions}</span>
-            <span className="text-muted-foreground/60 ml-2">({selectedOption.ratio})</span>
+            <span className="font-mono text-ocean-500">{selectedOption?.displayDimensions}</span>
+            <span className="text-muted-foreground/60 ml-2">({selectedOption?.ratio})</span>
           </div>
+        </div>
+
+        {/* Resolution Tier Pills */}
+        <div className="flex items-center gap-2">
+          {availableTiers.map((tier) => (
+            <button
+              key={tier}
+              onClick={() => handleTierChange(tier)}
+              className={`relative px-4 py-2 rounded-lg text-sm font-bold transition-all ${
+                resolutionTier === tier
+                  ? 'bg-gradient-to-r from-ocean-500 to-dream-500 text-white shadow-md'
+                  : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground border border-border/50'
+              }`}
+            >
+              {tier}
+            </button>
+          ))}
+          <span className="text-xs text-muted-foreground/60 ml-2">
+            {resolutionTier === '1K' && 'Standard'}
+            {resolutionTier === '2K' && 'High Quality'}
+            {resolutionTier === '4K' && 'Ultra HD'}
+          </span>
         </div>
 
         {/* Category selector */}
@@ -128,7 +144,7 @@ export function SizeSelector({ value, onChange, model, className = '' }: SizeSel
 
         {/* Size options grid */}
         <motion.div
-          key={selectedCategory}
+          key={`${selectedCategory}-${resolutionTier}`}
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
@@ -136,11 +152,11 @@ export function SizeSelector({ value, onChange, model, className = '' }: SizeSel
         >
           <AnimatePresence mode="wait">
             {categorizedOptions.map((option, index) => {
-              const isSelected = selectedOption.id === option.id;
+              const isSelected = selectedOption?.label === option.label;
 
               return (
                 <motion.button
-                  key={option.id}
+                  key={option.label}
                   onClick={() => handleSelect(option)}
                   initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
@@ -199,7 +215,7 @@ export function SizeSelector({ value, onChange, model, className = '' }: SizeSel
                     {/* Ratio label */}
                     <div className="text-center space-y-1">
                       <div className="text-sm font-semibold">{option.ratio}</div>
-                      <div className="text-xs text-muted-foreground font-mono">{option.dimensions}</div>
+                      <div className="text-xs text-muted-foreground font-mono">{option.displayDimensions}</div>
                     </div>
                   </div>
 

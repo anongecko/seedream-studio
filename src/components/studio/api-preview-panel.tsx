@@ -4,6 +4,7 @@ import * as React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Code2, Copy, Check, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { UnifiedMode, Quality, SeedreamRequest, SeaDreamModel } from '@/types/api';
+import { getModelById, buildQualityParam } from '@/lib/model-registry';
 
 interface ApiPreviewPanelProps {
   mode: UnifiedMode;
@@ -31,9 +32,9 @@ export function ApiPreviewPanel({
 
   // Build the API request object based on selected model
   const apiRequest = React.useMemo(() => {
-    const modelVersion = model === 'seedream-4-0' ? 'seedream-4-0-250828' : 'seedream-4-5-251128';
+    const modelEntry = getModelById(model);
     const request: Partial<SeedreamRequest> = {
-      model: modelVersion,
+      model: modelEntry.wireModelId as SeedreamRequest['model'],
       prompt: prompt || '',
       sequential_image_generation: batchMode ? 'auto' : 'disabled',
       response_format: 'b64_json',
@@ -60,16 +61,8 @@ export function ApiPreviewPanel({
       request.size = size.replace('×', 'x'); // Convert display format to API format
     }
 
-    // Model-specific quality parameter handling
-    if (model === 'seedream-4-0') {
-      // Seedream 4.0 uses 'quality' parameter
-      request.quality = quality;
-    } else {
-      // Seedream 4.5 uses 'optimize_prompt_options'
-      request.optimize_prompt_options = {
-        mode: quality,
-      };
-    }
+    // Model-specific quality parameter handling via registry
+    Object.assign(request, buildQualityParam(model, quality));
 
     return request;
   }, [mode, prompt, size, quality, batchMode, maxImages, referenceImageUrls, model]);
