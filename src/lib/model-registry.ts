@@ -201,7 +201,7 @@ export const MODEL_REGISTRY: readonly ModelRegistryEntry[] = [
     imageConstraints: {
       maxCount: 14,
       formats: ['jpeg', 'jpg', 'png', 'webp', 'bmp', 'tiff', 'gif'],
-      maxSize: 10 * 1024 * 1024,
+      maxSize: 10 * 2048 * 2048,
       aspectRatio: { min: 1 / 16, max: 16 },
       minDimension: 14,
       maxTotalPixels: 6000 * 6000,

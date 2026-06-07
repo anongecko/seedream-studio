@@ -24,7 +24,7 @@ import {
   formatGenerationTime,
   estimateBase64Size,
 } from '@/lib/utils';
-import { getModelById, buildQualityParam } from '@/lib/model-registry';
+import { getModelById, buildQualityParam, type Quality } from '@/lib/model-registry';
 
 interface GenerationOutputProps {
   images: Array<{
@@ -190,7 +190,7 @@ export function GenerationOutput({
       process.env.NEXT_PUBLIC_SEEDREAM_API_URL || 'https://ark.ap-southeast.bytepluses.com/api/v3';
     const modelEntry = model ? getModelById(model) : null;
     const modelVersion = modelEntry?.wireModelId || 'seedream-4-5-251128';
-    const requestBody: any = {
+    const requestBody: Record<string, unknown> = {
       model: modelVersion,
       prompt,
       sequential_image_generation: batchMode ? 'auto' : 'disabled',
@@ -205,7 +205,7 @@ export function GenerationOutput({
 
     // Model-specific quality parameter via registry
     if (model && quality) {
-      Object.assign(requestBody, buildQualityParam(model, quality as any));
+      Object.assign(requestBody, buildQualityParam(model, quality as Quality));
     }
 
     if (referenceImageUrls && referenceImageUrls.length > 0) {

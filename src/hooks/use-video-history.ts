@@ -11,7 +11,14 @@
 
 import { useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase/client';
-import type { VideoGenerationResult, VideoMode } from '@/types/video-api';
+import type {
+  VideoGenerationResult,
+  VideoMode,
+  VideoDuration,
+  VideoResolution,
+  VideoRatio,
+  VideoServiceTier,
+} from '@/types/video-api';
 
 // ============================================================================
 // Database Type (matches migration schema)
@@ -58,11 +65,11 @@ function transformDbToResult(record: VideoGenerationDB): VideoGenerationResult {
     mode: record.mode as VideoMode, // Cast from string to VideoMode
     referenceImageUrls: record.reference_image_urls || undefined,
     parameters: {
-      duration: record.duration as any, // Cast to VideoDuration
-      resolution: record.resolution as any, // Cast to VideoResolution
-      ratio: record.ratio as any, // Cast to VideoRatio
+      duration: record.duration as VideoDuration,
+      resolution: record.resolution as VideoResolution,
+      ratio: record.ratio as VideoRatio,
       generateAudio: record.generate_audio,
-      serviceTier: record.service_tier as any, // Cast to VideoServiceTier
+      serviceTier: record.service_tier as VideoServiceTier,
       returnLastFrame: record.return_last_frame,
     },
     actualDuration: record.duration,
@@ -120,69 +127,76 @@ export function useVideoHistory() {
   /**
    * Load specific video by task ID
    */
-  const loadVideoById = useCallback(async (taskId: string): Promise<VideoGenerationResult | null> => {
-    setLoading(true);
-    setError(null);
+  const loadVideoById = useCallback(
+    async (taskId: string): Promise<VideoGenerationResult | null> => {
+      setLoading(true);
+      setError(null);
 
-    try {
-      const { data, error: fetchError } = await supabase
-        .from('video_generations')
-        .select('*')
-        .eq('task_id', taskId)
-        .single();
+      try {
+        const { data, error: fetchError } = await supabase
+          .from('video_generations')
+          .select('*')
+          .eq('task_id', taskId)
+          .single();
 
-      if (fetchError || !data) {
-        throw new Error('Video not found');
+        if (fetchError || !data) {
+          throw new Error('Video not found');
+        }
+
+        return transformDbToResult(data);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to load video';
+        setError(errorMessage);
+        console.error('Failed to load video:', err);
+        return null;
+      } finally {
+        setLoading(false);
       }
-
-      return transformDbToResult(data);
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to load video';
-      setError(errorMessage);
-      console.error('Failed to load video:', err);
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    },
+    []
+  );
 
   /**
    * Load iteration chain for a video (original + all edits)
    */
-  const loadIterationChain = useCallback(async (rootTaskId: string): Promise<VideoGenerationResult[]> => {
-    setLoading(true);
-    setError(null);
+  const loadIterationChain = useCallback(
+    async (rootTaskId: string): Promise<VideoGenerationResult[]> => {
+      setLoading(true);
+      setError(null);
 
-    try {
-      const { data, error: fetchError } = await supabase
-        .rpc('get_video_iteration_chain', { root_task_id: rootTaskId });
+      try {
+        const { data, error: fetchError } = await supabase.rpc('get_video_iteration_chain', {
+          root_task_id: rootTaskId,
+        });
 
-      if (fetchError || !data) {
-        throw new Error('Failed to load iteration chain');
+        if (fetchError || !data) {
+          throw new Error('Failed to load iteration chain');
+        }
+
+        // Load full records for each task ID
+        const taskIds = data.map((row) => row.task_id);
+        const { data: records, error: recordError } = await supabase
+          .from('video_generations')
+          .select('*')
+          .in('task_id', taskIds)
+          .order('created_at', { ascending: true });
+
+        if (recordError || !records) {
+          throw new Error('Failed to load iteration records');
+        }
+
+        return records.map(transformDbToResult);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to load iteration chain';
+        setError(errorMessage);
+        console.error('Failed to load iteration chain:', err);
+        return [];
+      } finally {
+        setLoading(false);
       }
-
-      // Load full records for each task ID
-      const taskIds = data.map((row) => row.task_id);
-      const { data: records, error: recordError } = await supabase
-        .from('video_generations')
-        .select('*')
-        .in('task_id', taskIds)
-        .order('created_at', { ascending: true });
-
-      if (recordError || !records) {
-        throw new Error('Failed to load iteration records');
-      }
-
-      return records.map(transformDbToResult);
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to load iteration chain';
-      setError(errorMessage);
-      console.error('Failed to load iteration chain:', err);
-      return [];
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    },
+    []
+  );
 
   /**
    * Clear error state

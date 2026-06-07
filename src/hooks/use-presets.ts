@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import type { Preset } from '@/types/database';
 import type { GenerationMode, Quality } from '@/types/api';
@@ -23,7 +23,7 @@ export function usePresets() {
   const [error, setError] = useState<string | null>(null);
 
   // Fetch all presets
-  const fetchPresets = async () => {
+  const fetchPresets = useCallback(async () => {
     setIsLoading(true);
     setError(null);
 
@@ -43,14 +43,13 @@ export function usePresets() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   // Create a new preset
   const createPreset = async (preset: PresetInput): Promise<boolean> => {
     setError(null);
 
     try {
-      // Cast to any to bypass Supabase type inference (migration will update schema)
       const { error: insertError } = await supabase.from('presets').insert({
         name: preset.name,
         description: preset.description || null,
@@ -60,8 +59,8 @@ export function usePresets() {
         size: preset.size,
         quality: preset.quality,
         batch_mode: preset.batchMode,
-        max_images: preset.batchMode ? (preset.maxImages || null) : null,
-      } as any);
+        max_images: preset.batchMode ? preset.maxImages || null : null,
+      });
 
       if (insertError) throw insertError;
 
@@ -80,10 +79,7 @@ export function usePresets() {
     setError(null);
 
     try {
-      const { error: deleteError } = await supabase
-        .from('presets')
-        .delete()
-        .eq('id', id);
+      const { error: deleteError } = await supabase.from('presets').delete().eq('id', id);
 
       if (deleteError) throw deleteError;
 
@@ -125,7 +121,7 @@ export function usePresets() {
   // Load presets on mount
   useEffect(() => {
     fetchPresets();
-  }, []);
+  }, [fetchPresets]);
 
   const clearError = () => setError(null);
 

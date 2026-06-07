@@ -16,6 +16,36 @@ export interface ImageFile {
   };
 }
 
+/**
+ * Standalone validation function for image files against model constraints.
+ * Exported so page.tsx can re-validate existing uploads on model switch.
+ */
+export function validateImageFileForModel(
+  file: File,
+  model: SeedreamModel
+): { valid: boolean; error?: string } {
+  const constraints = getModelConstraints(model).imageUrl;
+
+  // Check file size
+  if (file.size > constraints.maxSize) {
+    return {
+      valid: false,
+      error: `File too large (max ${Math.round(constraints.maxSize / 2048 / 2048)}MB)`,
+    };
+  }
+
+  // Check format
+  const ext = file.name.toLowerCase().split('.').pop();
+  if (!ext || !constraints.formats.includes(ext)) {
+    return {
+      valid: false,
+      error: `Invalid format (supported: ${constraints.formats.join(', ')})`,
+    };
+  }
+
+  return { valid: true };
+}
+
 interface ImageUploadZoneProps {
   images: ImageFile[];
   onChange: (images: ImageFile[]) => void;
@@ -37,29 +67,10 @@ export function ImageUploadZone({
   const [isDragging, setIsDragging] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-  // Validate image file
+  // Validate image file (delegates to standalone exported function)
   const validateImageFile = React.useCallback(
     (file: File): { valid: boolean; error?: string } => {
-      const constraints = getModelConstraints(model).imageUrl;
-
-      // Check file size
-      if (file.size > constraints.maxSize) {
-        return {
-          valid: false,
-          error: `File too large (max ${Math.round(constraints.maxSize / 1024 / 1024)}MB)`,
-        };
-      }
-
-      // Check format
-      const ext = file.name.toLowerCase().split('.').pop();
-      if (!ext || !constraints.formats.includes(ext as any)) {
-        return {
-          valid: false,
-          error: `Invalid format (supported: ${constraints.formats.join(', ')})`,
-        };
-      }
-
-      return { valid: true };
+      return validateImageFileForModel(file, model);
     },
     [model]
   );
@@ -127,10 +138,14 @@ export function ImageUploadZone({
     onChange(images.filter((img) => img.id !== id));
   };
 
+  // Ref to avoid stale closure in unmount-only cleanup
+  const imagesRef = React.useRef(images);
+  imagesRef.current = images;
+
   // Cleanup on unmount
   React.useEffect(() => {
     return () => {
-      images.forEach((img) => URL.revokeObjectURL(img.preview));
+      imagesRef.current.forEach((img) => URL.revokeObjectURL(img.preview));
     };
   }, []);
 

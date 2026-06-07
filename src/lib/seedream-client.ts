@@ -9,7 +9,12 @@ import type {
   SeedreamModel,
 } from '@/types/api';
 import { getModelDefaults, getModelConstraints } from '@/constants/parameters';
-import { getModelById, getModelByWireId, buildQualityParam, extractQualityFromRequest } from '@/lib/model-registry';
+import {
+  getModelById,
+  getModelByWireId,
+  buildQualityParam,
+  extractQualityFromRequest,
+} from '@/lib/model-registry';
 
 /**
  * Seedream API client with Supabase integration
@@ -25,8 +30,7 @@ export class SeedreamClient {
     }
     this.apiKey = apiKey;
     this.baseUrl =
-      process.env.NEXT_PUBLIC_SEEDREAM_API_URL ||
-      'https://ark.ap-southeast.bytepluses.com/api/v3';
+      process.env.NEXT_PUBLIC_SEEDREAM_API_URL || 'https://ark.ap-southeast.bytepluses.com/api/v3';
   }
 
   /**
@@ -165,7 +169,9 @@ export class SeedreamClient {
     if (request.image) {
       const images = Array.isArray(request.image) ? request.image : [request.image];
       if (images.length > constraints.imageUrl.maxCount) {
-        throw new Error(`Maximum ${constraints.imageUrl.maxCount} reference images allowed for ${model}`);
+        throw new Error(
+          `Maximum ${constraints.imageUrl.maxCount} reference images allowed for ${model}`
+        );
       }
       if (images.length < 1) {
         throw new Error('At least 1 reference image required when using image mode');
@@ -180,14 +186,20 @@ export class SeedreamClient {
       }
 
       // Validate against mode constraints
-      const images = request.image ? (Array.isArray(request.image) ? request.image : [request.image]) : [];
+      const images = request.image
+        ? Array.isArray(request.image)
+          ? request.image
+          : [request.image]
+        : [];
       const inputCount = images.length;
 
       if (inputCount === 1 && maxImages > 14) {
         throw new Error('With 1 reference image, max_images cannot exceed 14');
       }
-      if (inputCount > 1 && (inputCount + maxImages) > 15) {
-        throw new Error(`With ${inputCount} reference images, max_images cannot exceed ${15 - inputCount}`);
+      if (inputCount > 1 && inputCount + maxImages > 15) {
+        throw new Error(
+          `With ${inputCount} reference images, max_images cannot exceed ${15 - inputCount}`
+        );
       }
     }
 
@@ -208,7 +220,7 @@ export class SeedreamClient {
     const constraints = getModelConstraints(model);
 
     // Check if it's a preset
-    if (constraints.size.presets.includes(size as any)) {
+    if (constraints.size.presets.includes(size)) {
       return true;
     }
 
@@ -223,13 +235,19 @@ export class SeedreamClient {
 
     // Validate total pixels
     const totalPixels = width * height;
-    if (totalPixels < constraints.size.minTotalPixels || totalPixels > constraints.size.maxTotalPixels) {
+    if (
+      totalPixels < constraints.size.minTotalPixels ||
+      totalPixels > constraints.size.maxTotalPixels
+    ) {
       return false;
     }
 
     // Validate aspect ratio
     const aspectRatio = width / height;
-    if (aspectRatio < constraints.size.aspectRatioRange.min || aspectRatio > constraints.size.aspectRatioRange.max) {
+    if (
+      aspectRatio < constraints.size.aspectRatioRange.min ||
+      aspectRatio > constraints.size.aspectRatioRange.max
+    ) {
       return false;
     }
 
@@ -265,21 +283,18 @@ export class SeedreamClient {
       }
 
       // Insert generation record with metadata only (NO IMAGES)
-      // Cast to any to bypass Supabase type inference (migration will update schema)
-      const { error } = await supabase.from('generations').insert([
-        {
-          prompt: request.prompt,
-          mode,
-          reference_image_urls: images.length > 0 ? images : null,
-          size: request.size,
-          quality: extractQualityFromRequest(model, request as unknown as Record<string, unknown>),
-          batch_mode: request.sequential_image_generation === 'auto',
-          max_images: request.sequential_image_generation_options?.max_images || null,
-          images_generated: response.data.length, // Store count only
-          generation_time_ms: generationTime,
-          model_version: response.model,
-        } as any,
-      ]);
+      const { error } = await supabase.from('generations').insert({
+        prompt: request.prompt,
+        mode,
+        reference_image_urls: images.length > 0 ? images : null,
+        size: request.size || '2048x2048',
+        quality: extractQualityFromRequest(model, request as unknown as Record<string, unknown>),
+        batch_mode: request.sequential_image_generation === 'auto',
+        max_images: request.sequential_image_generation_options?.max_images || null,
+        images_generated: response.data.length,
+        generation_time_ms: generationTime,
+        model_version: response.model,
+      });
 
       if (error) {
         console.error('Failed to save generation to database:', error);
@@ -290,8 +305,6 @@ export class SeedreamClient {
       // Don't throw - generation succeeded, DB save is secondary
     }
   }
-
-
 }
 
 /**

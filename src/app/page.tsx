@@ -14,6 +14,7 @@ import { ApiPreviewPanel } from '@/components/studio/api-preview-panel';
 import { GenerationOutput } from '@/components/studio/generation-output';
 import {
   ImageUploadZone,
+  validateImageFileForModel,
   filesToBase64,
   type ImageFile,
 } from '@/components/studio/image-upload-zone';
@@ -28,6 +29,7 @@ import type {
   VideoRatio,
   VideoServiceTier,
   VideoMode,
+  VideoImageRole,
   MediaType,
 } from '@/types/video-api';
 import { getMediaType, isVideoModel, isVideoMode } from '@/types/api';
@@ -134,6 +136,9 @@ export default function Home() {
   const videoImageCount = videoImages.filter((img) => img.validationStatus === 'valid').length;
 
   // Handle model switch - map mode and clear state
+  // Intentionally only runs on model change: mode remapping and result clearing
+  // should not re-trigger when mode/clear* change independently.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   React.useEffect(() => {
     const newMediaType = getMediaType(selectedModel);
     const newMode = mapModeOnModelSwitch(mode, newMediaType);
@@ -142,12 +147,25 @@ export default function Home() {
       setMode(newMode);
     }
 
+    // Re-validate existing uploads against new model's constraints
+    if (referenceImages.length > 0) {
+      setReferenceImages((prev) =>
+        prev.map((img) => ({
+          ...img,
+          validation: validateImageFileForModel(img.file, selectedModel as SeedreamModel),
+        }))
+      );
+    }
+
     // Clear results when switching models
     clearImageResult();
     clearVideoResult();
   }, [selectedModel]);
 
-  // Clear uploaded images and reset batch settings when switching modes
+  // Clear uploaded images and reset batch settings when switching modes.
+  // videoImages/referenceImages are intentionally excluded — including them would
+  // cause infinite loops since this effect reads and clears them.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   React.useEffect(() => {
     if (isVideo) {
       // Cleanup video image URLs
@@ -204,7 +222,7 @@ export default function Home() {
     const videoImageInputs = await Promise.all(
       validImages.map(async (img) => {
         const reader = new FileReader();
-        return new Promise<{ url: string; role?: any }>((resolve) => {
+        return new Promise<{ url: string; role?: VideoImageRole }>((resolve) => {
           reader.onload = () => {
             resolve({
               url: reader.result as string,
